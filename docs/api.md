@@ -11,5 +11,6 @@ The first live endpoint is intentionally small. Future endpoints retain the `/ap
 | `GET /api/v1/customers/{id}/context` | Customer recovery context | Day 5 |
 | `GET /api/v1/recoveries/{transaction_id}` | Explain a recovery decision and audit trail | Day 9+ |
 | `GET /api/v1/metrics` | Recovery performance metrics | Day 12 |
+| `POST /api/v1/events/payment-failures` | Validate and durably ingest a normalized payment-failure event | Day 2 implemented |
 
 All future write endpoints will accept an idempotency key where repeat submission could create a financial side effect. Events and API responses will carry transaction, event, correlation, and request IDs as appropriate.

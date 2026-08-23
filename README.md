@@ -6,7 +6,7 @@
 
 Failed payments create silent revenue loss. A generic “try again” message ignores why a payment failed, what has worked for this customer before, and whether another attempt is safe or worthwhile. RecoverX is being built to identify recoverable failures, choose a permitted recovery path, execute a bounded workflow, and measure recovered GMV with a complete audit trail.
 
-**Status:** Day 2 system architecture complete. The runnable Day 1 foundation is now backed by reviewed designs for event processing, services, persistence, bounded agent orchestration, ML, dashboard projections, integrations, and operations. Implementation remains staged by the delivery plan.
+**Status:** Day 2 system architecture complete. The project now includes the first executable vertical slice: SQLAlchemy recovery models, deterministic policy gating, idempotent failed-payment ingestion, transactional outbox records, and automated coverage for policy and duplicate events.
 
 ## Product story
 
@@ -28,6 +28,9 @@ For example, a ₹4,999 card payment that fails with a bank decline may be route
 - Docker Compose foundation for API + PostgreSQL + Redis
 - Day 2-ready module boundaries, database schema design, and API contracts
 - Automated health endpoint test
+- SQLAlchemy payment/recovery/audit/outbox models
+- Idempotent `payment.failed` ingestion with audit and transactional outbox records
+- Deterministic policy gate that stops hard failures before recovery actions
 
 ## Architecture
 
@@ -73,6 +76,16 @@ uvicorn backend.app.main:app --reload
 ```
 
 Open `http://127.0.0.1:8000/health`. Interactive OpenAPI docs are available at `http://127.0.0.1:8000/docs`.
+
+### Try the event pipeline
+
+With the Docker stack running, submit a normalized failed-payment event:
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/events/payment-failures -ContentType application/json -Body '{"external_transaction_id":"txn-demo-001","merchant_id":"merchant-demo","amount":4999,"payment_method":"CARD","attempt_number":1,"failure_code":"CARD_DECLINED"}'
+```
+
+The API creates source-of-truth transaction/attempt/failure/audit/outbox records in one database transaction. Include an `event_id` in the request and re-submit it to receive a duplicate-safe `200` response.
 
 ### Docker
 
