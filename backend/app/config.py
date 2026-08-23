@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     database_url: str = "postgresql+psycopg://recoverx:recoverx@localhost:5432/recoverx"
     redis_url: str = "redis://localhost:6379/0"
+    auto_create_schema: bool = False
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

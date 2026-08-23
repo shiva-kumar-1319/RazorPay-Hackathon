@@ -19,6 +19,14 @@ def create_session_factory(database_url: str | None = None) -> sessionmaker[Sess
 SessionLocal = create_session_factory()
 
 
+def initialize_database() -> None:
+    """Create local development tables; production should use migrations instead."""
+    from backend.app.models.base import Base
+    import backend.app.models.recovery  # noqa: F401 - registers model metadata
+
+    Base.metadata.create_all(SessionLocal.kw["bind"])
+
+
 def get_db() -> Generator[Session, None, None]:
     """FastAPI dependency that closes each request-scoped database session."""
     session = SessionLocal()

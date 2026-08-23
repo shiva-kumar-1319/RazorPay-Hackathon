@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from backend.app.api.events import router as events_router
 from backend.app.api.health import router as health_router
 from backend.app.config import get_settings
+from backend.app.db import initialize_database
 from backend.app.logging import configure_logging
 
 
@@ -18,6 +19,8 @@ from backend.app.logging import configure_logging
 async def lifespan(_: FastAPI):
     settings = get_settings()
     configure_logging(settings.log_level)
+    if settings.auto_create_schema:
+        initialize_database()
     logging.getLogger(__name__).info("Starting %s in %s", settings.app_name, settings.app_env)
     yield
     logging.getLogger(__name__).info("Stopping %s", settings.app_name)

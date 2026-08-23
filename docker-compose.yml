@@ -9,6 +9,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
+    environment:
+      AUTO_CREATE_SCHEMA: "true"
   postgres:
     image: postgres:16-alpine
     environment:
