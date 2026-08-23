@@ -1,0 +1,145 @@
+"""Core transactional models for payment failure recovery."""
+
+from __future__ import annotations
+
+from datetime import datetime
+from decimal import Decimal
+from enum import Enum
+from typing import Any
+from uuid import UUID, uuid4
+
+from sqlalchemy import DateTime, JSON, Boolean, Enum as SqlEnum, ForeignKey, Index, Integer, Numeric, String, Uuid
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from backend.app.models.base import Base, TimestampedModel
+
+
+class TransactionStatus(str, Enum):
+    CREATED = "CREATED"
+    PROCESSING = "PROCESSING"
+    FAILED = "FAILED"
+    SUCCEEDED = "SUCCEEDED"
+
+
+class RecoveryState(str, Enum):
+    OPEN = "OPEN"
+    SCHEDULED = "SCHEDULED"
+    RECOVERED = "RECOVERED"
+    STOPPED = "STOPPED"
+    NEEDS_REVIEW = "NEEDS_REVIEW"
+
+
+class ActionType(str, Enum):
+    RETRY_SAME_METHOD = "RETRY_SAME_METHOD"
+    SWITCH_TO_UPI = "SWITCH_TO_UPI"
+    SWITCH_TO_CARD = "SWITCH_TO_CARD"
+    SWITCH_TO_NETBANKING = "SWITCH_TO_NETBANKING"
+    DELAYED_RETRY = "DELAYED_RETRY"
+    CUSTOMER_NOTIFICATION = "CUSTOMER_NOTIFICATION"
+    PAYMENT_LINK = "PAYMENT_LINK"
+    STOP_RECOVERY = "STOP_RECOVERY"
+
+
+class Customer(TimestampedModel, Base):
+    __tablename__ = "customers"
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    external_customer_id: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    merchant_id: Mapped[str] = mapped_column(String(128), index=True)
+    preferred_payment_method: Mapped[str | None] = mapped_column(String(32))
+    transactions: Mapped[list[Transaction]] = relationship(back_populates="customer")
+
+
+class Transaction(TimestampedModel, Base):
+    __tablename__ = "transactions"
+    __table_args__ = (Index("ix_transactions_merchant_status_created", "merchant_id", "status", "created_at"),)
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    external_transaction_id: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    merchant_id: Mapped[str] = mapped_column(String(128), index=True)
+    customer_id: Mapped[UUID | None] = mapped_column(ForeignKey("customers.id"), index=True)
+    amount: Mapped[Decimal] = mapped_column(Numeric(18, 2))
+    currency: Mapped[str] = mapped_column(String(3), default="INR")
+    status: Mapped[TransactionStatus] = mapped_column(SqlEnum(TransactionStatus), default=TransactionStatus.CREATED)
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    customer: Mapped[Customer | None] = relationship(back_populates="transactions")
+    attempts: Mapped[list[PaymentAttempt]] = relationship(back_populates="transaction")
+    recovery_cases: Mapped[list[RecoveryCase]] = relationship(back_populates="transaction")
+
+
+class PaymentAttempt(TimestampedModel, Base):
+    __tablename__ = "payment_attempts"
+    __table_args__ = (Index("uq_attempt_transaction_number", "transaction_id", "attempt_number", unique=True),)
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    transaction_id: Mapped[UUID] = mapped_column(ForeignKey("transactions.id"), index=True)
+    attempt_number: Mapped[int] = mapped_column(Integer)
+    payment_method: Mapped[str] = mapped_column(String(32))
+    gateway: Mapped[str | None] = mapped_column(String(64))
+    failure_code: Mapped[str | None] = mapped_column(String(64), index=True)
+    transaction: Mapped[Transaction] = relationship(back_populates="attempts")
+    failures: Mapped[list[FailureEvent]] = relationship(back_populates="attempt")
+
+
+class FailureEvent(TimestampedModel, Base):
+    __tablename__ = "failure_events"
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    source_event_id: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    transaction_id: Mapped[UUID] = mapped_column(ForeignKey("transactions.id"), index=True)
+    attempt_id: Mapped[UUID] = mapped_column(ForeignKey("payment_attempts.id"), index=True)
+    failure_code: Mapped[str] = mapped_column(String(64))
+    category: Mapped[str] = mapped_column(String(32), index=True)
+    recoverable: Mapped[bool] = mapped_column(Boolean)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    attempt: Mapped[PaymentAttempt] = relationship(back_populates="failures")
+
+
+class RecoveryCase(TimestampedModel, Base):
+    __tablename__ = "recovery_cases"
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    transaction_id: Mapped[UUID] = mapped_column(ForeignKey("transactions.id"), index=True)
+    state: Mapped[RecoveryState] = mapped_column(SqlEnum(RecoveryState), default=RecoveryState.OPEN, index=True)
+    policy_version: Mapped[str] = mapped_column(String(32))
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    transaction: Mapped[Transaction] = relationship(back_populates="recovery_cases")
+    actions: Mapped[list[RecoveryAction]] = relationship(back_populates="recovery_case")
+
+
+class RecoveryAction(TimestampedModel, Base):
+    __tablename__ = "recovery_actions"
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    recovery_case_id: Mapped[UUID] = mapped_column(ForeignKey("recovery_cases.id"), index=True)
+    action_type: Mapped[ActionType] = mapped_column(SqlEnum(ActionType))
+    idempotency_key: Mapped[str] = mapped_column(String(160), unique=True)
+    selected: Mapped[bool] = mapped_column(Boolean, default=False)
+    probability: Mapped[Decimal | None] = mapped_column(Numeric(5, 4))
+    expected_value: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
+    reason_codes: Mapped[list[str]] = mapped_column(JSON, default=list)
+    recovery_case: Mapped[RecoveryCase] = relationship(back_populates="actions")
+
+
+class OutboxEvent(TimestampedModel, Base):
+    __tablename__ = "outbox_events"
+    __table_args__ = (Index("ix_outbox_unpublished_created", "published_at", "created_at"),)
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    event_type: Mapped[str] = mapped_column(String(96))
+    aggregate_type: Mapped[str] = mapped_column(String(64))
+    aggregate_id: Mapped[str] = mapped_column(String(64), index=True)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class AuditLog(TimestampedModel, Base):
+    __tablename__ = "audit_logs"
+    __table_args__ = (Index("ix_audit_transaction_created", "transaction_id", "created_at"),)
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    transaction_id: Mapped[UUID] = mapped_column(ForeignKey("transactions.id"), index=True)
+    event_type: Mapped[str] = mapped_column(String(96))
+    actor: Mapped[str] = mapped_column(String(64))
+    reason_codes: Mapped[list[str]] = mapped_column(JSON, default=list)
+    metadata_: Mapped[dict[str, Any]] = mapped_column("metadata", JSON, default=dict)
