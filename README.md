@@ -6,7 +6,7 @@
 
 Failed payments create silent revenue loss. A generic “try again” message ignores why a payment failed, what has worked for this customer before, and whether another attempt is safe or worthwhile. RecoverX is being built to identify recoverable failures, choose a permitted recovery path, execute a bounded workflow, and measure recovered GMV with a complete audit trail.
 
-**Status:** Day 1 foundation complete. The service is runnable and documented; ML, agent orchestration, event processing, simulator, and dashboard are intentionally deferred to their planned implementation days.
+**Status:** Day 2 system architecture complete. The runnable Day 1 foundation is now backed by reviewed designs for event processing, services, persistence, bounded agent orchestration, ML, dashboard projections, integrations, and operations. Implementation remains staged by the delivery plan.
 
 ## Product story
 
@@ -90,7 +90,17 @@ pytest
 
 ## Documentation
 
-- [Architecture](docs/architecture.md)
+- [Day 2 system architecture blueprint](docs/day-2-system-architecture.md)
+- [Event flow](docs/event-flow.md)
+- [Service architecture](docs/service-architecture.md)
+- [Persistence architecture](docs/persistence-architecture.md)
+- [Bounded agent architecture](docs/agent-architecture.md)
+- [ML architecture](docs/ml-architecture.md)
+- [Dashboard architecture](docs/dashboard-architecture.md)
+- [Integration contracts](docs/integration-contracts.md)
+- [Reliability and security](docs/reliability-and-security.md)
+- [Architecture delivery plan](docs/architecture-delivery-plan.md)
+- [Foundation architecture](docs/architecture.md)
 - [API boundaries](docs/api.md)
 - [Database schema](docs/database.md)
 - [Day 1 scope](docs/day-1-foundation.md)
