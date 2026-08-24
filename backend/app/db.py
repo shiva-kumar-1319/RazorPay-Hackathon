@@ -2,7 +2,7 @@
 
 from collections.abc import Generator
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.config import get_settings
@@ -25,6 +25,17 @@ def initialize_database() -> None:
     import backend.app.models.recovery  # noqa: F401 - registers model metadata
 
     Base.metadata.create_all(SessionLocal.kw["bind"])
+
+
+def check_database_health() -> bool:
+    """Verify database connectivity with a lightweight ping."""
+    try:
+        engine = SessionLocal.kw["bind"]
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        return True
+    except Exception:
+        return False
 
 
 def get_db() -> Generator[Session, None, None]:

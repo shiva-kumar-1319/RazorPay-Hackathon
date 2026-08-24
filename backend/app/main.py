@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from uuid import uuid4
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from backend.app.api.events import router as events_router
@@ -18,10 +19,10 @@ from backend.app.logging import configure_logging
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     settings = get_settings()
-    configure_logging(settings.log_level)
+    configure_logging(settings.log_level, settings.log_format)
     if settings.auto_create_schema:
         initialize_database()
-    logging.getLogger(__name__).info("Starting %s in %s", settings.app_name, settings.app_env)
+    logging.getLogger(__name__).info("Starting %s in %s (version 0.2.0)", settings.app_name, settings.app_env)
     yield
     logging.getLogger(__name__).info("Stopping %s", settings.app_name)
 
@@ -29,10 +30,20 @@ async def lifespan(_: FastAPI):
 settings = get_settings()
 app = FastAPI(
     title=settings.app_name,
-    version="0.1.0",
-    description="Day 1 foundation for an AI revenue recovery engine.",
+    version="0.2.0",
+    description="Day 3 production-ready foundation for RecoverX AI Revenue Recovery Engine.",
     lifespan=lifespan,
 )
+
+# CORS middleware for merchant dashboard and frontend integrations
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(health_router)
 app.include_router(events_router)
 

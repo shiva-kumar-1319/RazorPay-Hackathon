@@ -6,7 +6,7 @@
 
 Failed payments create silent revenue loss. A generic “try again” message ignores why a payment failed, what has worked for this customer before, and whether another attempt is safe or worthwhile. RecoverX is being built to identify recoverable failures, choose a permitted recovery path, execute a bounded workflow, and measure recovered GMV with a complete audit trail.
 
-**Status:** Day 2 system architecture complete. The project now includes the first executable vertical slice: SQLAlchemy recovery models, deterministic policy gating, idempotent failed-payment ingestion, transactional outbox records, and automated coverage for policy and duplicate events.
+**Status:** Day 3 Project Foundation complete. The platform features production-hardened infrastructure: Alembic migration pipeline, multi-stage Docker container with non-root execution and health probes, named network orchestration in Docker Compose, shared pytest fixture architecture with transactional SQLite isolation, CORS middleware, structured JSON logging, and live database health monitoring.
 
 ## Product story
 
@@ -22,28 +22,30 @@ For example, a ₹4,999 card payment that fails with a bank decline may be route
 
 ## Current foundation
 
-- FastAPI application with versioned API structure
-- `/health` endpoint, request IDs, structured logging, and basic error handling
-- Environment-driven configuration
-- Docker Compose foundation for API + PostgreSQL + Redis
-- Day 2-ready module boundaries, database schema design, and API contracts
-- Automated health endpoint test
+- FastAPI application with versioned API structure (`/api/v1/events/...`)
+- `/health` endpoint with active database connectivity probe
+- Alembic database migration management (`001_initial_schema.py`)
+- Request correlation IDs, structured JSON / text logging, and unhandled exception handling
+- Configurable CORS middleware for dashboard integrations
+- Multi-stage Dockerfile with unprivileged `appuser` (UID 1001) and container `HEALTHCHECK`
+- Docker Compose stack with PostgreSQL, Redis, health checks, and named network (`recoverx-net`)
 - SQLAlchemy payment/recovery/audit/outbox models
 - Idempotent `payment.failed` ingestion with audit and transactional outbox records
 - Deterministic policy gate that stops hard failures before recovery actions
+- Automated testing suite with in-memory SQLite fixtures and TestClient dependency injection
 
 ## Architecture
 
 ```text
 Dashboard (future)
        ↓
-FastAPI API Gateway
+FastAPI API Gateway (CORS enabled)
        ↓
 Payment / Event / Recovery Orchestrator (planned modules)
        ↓
 Failure Intelligence + Customer Context + Decision Engine + Bounded Agent
        ↓
-PostgreSQL     Redis     ML model (future)
+PostgreSQL (Alembic)     Redis     ML model (future)
 ```
 
 See [architecture documentation](docs/architecture.md) for ownership and extension points.
@@ -72,6 +74,7 @@ python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
 copy .env.example .env
+alembic upgrade head
 uvicorn backend.app.main:app --reload
 ```
 
@@ -79,21 +82,23 @@ Open `http://127.0.0.1:8000/health`. Interactive OpenAPI docs are available at `
 
 ### Try the event pipeline
 
-With the Docker stack running, submit a normalized failed-payment event:
+With the application running, submit a normalized failed-payment event:
 
 ```powershell
 Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/events/payment-failures -ContentType application/json -Body '{"external_transaction_id":"txn-demo-001","merchant_id":"merchant-demo","amount":4999,"payment_method":"CARD","attempt_number":1,"failure_code":"CARD_DECLINED"}'
 ```
 
-The API creates source-of-truth transaction/attempt/failure/audit/outbox records in one database transaction. Include an `event_id` in the request and re-submit it to receive a duplicate-safe `200` response.
+The API creates source-of-truth transaction/attempt/failure/audit/outbox records in one database transaction. Re-submitting the exact same event produces an idempotent duplicate-safe `200` response.
 
 ### Docker
+
+Run the full production-hardened stack:
 
 ```bash
 docker compose up --build
 ```
 
-The compose file provides PostgreSQL and Redis now as foundation services; application persistence and caching are deliberately introduced in Day 2 and Day 5.
+The stack automatically launches PostgreSQL with healthchecks, applies pending Alembic migrations via `entrypoint.sh`, and starts the FastAPI service under the non-root `appuser`.
 
 ### Tests
 
@@ -103,6 +108,7 @@ pytest
 
 ## Documentation
 
+- [Day 3 Project Foundation & Hardening](docs/day-3-project-foundation.md)
 - [Day 2 system architecture blueprint](docs/day-2-system-architecture.md)
 - [Event flow](docs/event-flow.md)
 - [Service architecture](docs/service-architecture.md)
@@ -121,12 +127,14 @@ pytest
 
 ## Roadmap
 
-| Phase | Planned capability |
-| --- | --- |
-| Day 2 | SQLAlchemy models, database initialization, migrations |
-| Day 3–6 | Payment simulator, events, customer context, failure intelligence |
-| Day 7–10 | Dataset, recovery model, deterministic decision engine, bounded agent |
-| Day 11–14 | Recovery workflows, dashboard, evaluation, demo and hardening |
+| Phase | Planned capability | Status |
+| --- | --- | --- |
+| Day 1 | API gateway foundation, health probe, logging | Complete |
+| Day 2 | Domain models, event ingestion slice, policy gate | Complete |
+| Day 3 | Project foundation hardening, Alembic migrations, Docker security, test suite | Complete |
+| Day 4–6 | Payment simulator, events, customer context, failure intelligence | Next |
+| Day 7–10 | Dataset, recovery model, deterministic decision engine, bounded agent | Planned |
+| Day 11–14 | Recovery workflows, dashboard, evaluation, demo and hardening | Planned |
 
 ## License
 
