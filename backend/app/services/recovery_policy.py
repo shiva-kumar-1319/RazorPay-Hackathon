@@ -5,9 +5,35 @@ from dataclasses import dataclass
 from backend.app.models.recovery import ActionType
 
 
-HARD_STOP_CODES = {"BLOCKED_CARD", "INVALID_ACCOUNT", "FRAUD_REJECTED"}
-CUSTOMER_ACTION_CODES = {"OTP_TIMEOUT", "3DS_FAILURE"}
-TEMPORARY_CODES = {"TIMEOUT", "NETWORK_ERROR", "UPI_FAILURE"}
+HARD_STOP_CODES = {
+    "BLOCKED_CARD",
+    "INVALID_ACCOUNT",
+    "FRAUD_REJECTED",
+    "EXPIRED_CARD",
+    "LIMIT_EXCEEDED_HARD",
+}
+
+CUSTOMER_ACTION_CODES = {
+    "OTP_TIMEOUT",
+    "3DS_FAILURE",
+    "INSUFFICIENT_FUNDS",
+    "INCORRECT_PIN",
+    "USER_CANCELLED",
+}
+
+PAYMENT_METHOD_CODES = {
+    "CARD_DECLINED",
+    "CARD_TYPE_NOT_SUPPORTED",
+    "MANDATE_FAILED",
+}
+
+TEMPORARY_CODES = {
+    "TIMEOUT",
+    "NETWORK_ERROR",
+    "UPI_FAILURE",
+    "GATEWAY_ERROR",
+    "BANK_SERVER_DOWN",
+}
 
 
 @dataclass(frozen=True)
@@ -30,11 +56,11 @@ def evaluate_failure_policy(failure_code: str) -> PolicyResult:
             (ActionType.CUSTOMER_NOTIFICATION, ActionType.PAYMENT_LINK),
             ("CUSTOMER_ACTION_REQUIRED", normalized),
         )
-    if normalized == "CARD_DECLINED":
+    if normalized in PAYMENT_METHOD_CODES:
         return PolicyResult(
             "PAYMENT_METHOD",
             True,
-            (ActionType.SWITCH_TO_UPI, ActionType.PAYMENT_LINK),
+            (ActionType.SWITCH_TO_UPI, ActionType.PAYMENT_LINK, ActionType.SWITCH_TO_NETBANKING),
             ("ALTERNATE_METHOD_PREFERRED", normalized),
         )
     if normalized in TEMPORARY_CODES:

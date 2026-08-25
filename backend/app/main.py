@@ -11,6 +11,8 @@ from fastapi.responses import JSONResponse
 
 from backend.app.api.events import router as events_router
 from backend.app.api.health import router as health_router
+from backend.app.api.simulator import router as simulator_router
+from backend.app.api.transactions import router as transactions_router
 from backend.app.config import get_settings
 from backend.app.db import initialize_database
 from backend.app.logging import configure_logging
@@ -22,7 +24,7 @@ async def lifespan(_: FastAPI):
     configure_logging(settings.log_level, settings.log_format)
     if settings.auto_create_schema:
         initialize_database()
-    logging.getLogger(__name__).info("Starting %s in %s (version 0.2.0)", settings.app_name, settings.app_env)
+    logging.getLogger(__name__).info("Starting %s in %s (version 0.3.0)", settings.app_name, settings.app_env)
     yield
     logging.getLogger(__name__).info("Stopping %s", settings.app_name)
 
@@ -30,8 +32,8 @@ async def lifespan(_: FastAPI):
 settings = get_settings()
 app = FastAPI(
     title=settings.app_name,
-    version="0.2.0",
-    description="Day 3 production-ready foundation for RecoverX AI Revenue Recovery Engine.",
+    version="0.3.0",
+    description="Day 4 Payment Simulator & Transaction Lifecycle for RecoverX AI Revenue Recovery Engine.",
     lifespan=lifespan,
 )
 
@@ -46,6 +48,8 @@ app.add_middleware(
 
 app.include_router(health_router)
 app.include_router(events_router)
+app.include_router(simulator_router)
+app.include_router(transactions_router)
 
 
 @app.middleware("http")

@@ -27,9 +27,12 @@ def initialize_database() -> None:
     Base.metadata.create_all(SessionLocal.kw["bind"])
 
 
-def check_database_health() -> bool:
+def check_database_health(session: Session | None = None) -> bool:
     """Verify database connectivity with a lightweight ping."""
     try:
+        if session is not None:
+            session.execute(text("SELECT 1"))
+            return True
         engine = SessionLocal.kw["bind"]
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
