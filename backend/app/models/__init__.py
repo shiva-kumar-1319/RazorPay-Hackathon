@@ -7,6 +7,8 @@ from backend.app.models.recovery import (
     FailureEvent,
     OutboxEvent,
     PaymentAttempt,
+    ProcessedEvent,
+    QuarantineEvent,
     RecoveryAction,
     RecoveryCase,
     Transaction,
@@ -19,7 +21,10 @@ __all__ = [
     "FailureEvent",
     "OutboxEvent",
     "PaymentAttempt",
+    "ProcessedEvent",
+    "QuarantineEvent",
     "RecoveryAction",
     "RecoveryCase",
     "Transaction",
 ]
+

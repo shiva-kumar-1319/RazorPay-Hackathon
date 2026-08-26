@@ -4,66 +4,61 @@
 
 ## Why RecoverX
 
-Failed payments create silent revenue loss. A generic “try again” message ignores why a payment failed, what has worked for this customer before, and whether another attempt is safe or worthwhile. RecoverX is being built to identify recoverable failures, choose a permitted recovery path, execute a bounded workflow, and measure recovered GMV with a complete audit trail.
+Failed payments create silent revenue loss. A generic “try again” message ignores why a payment failed, what has worked for this customer before, and whether another attempt is safe or worthwhile. RecoverX is built to identify recoverable failures, choose a permitted recovery path, execute a bounded workflow, and measure recovered GMV with a complete audit trail.
 
-**Status:** Day 3 Project Foundation complete. The platform features production-hardened infrastructure: Alembic migration pipeline, multi-stage Docker container with non-root execution and health probes, named network orchestration in Docker Compose, shared pytest fixture architecture with transactional SQLite isolation, CORS middleware, structured JSON logging, and live database health monitoring.
+**Status:** Day 5 Real-Time Event Pipeline & Recovery Service complete. The platform features an in-process asynchronous EventBus, transactional Outbox Publisher, idempotent Recovery Orchestrator with `processed_events` deduplication, dead-letter `quarantine_events` handling, deterministic candidate action generation, standalone worker CLI daemon, and complete recovery query APIs.
 
 ## Product story
 
-`Failed payment → failure diagnosis → customer context → permitted recovery options → value-based decision → bounded execution → audit trail → recovered GMV`
+`Failed payment → failure diagnosis → outbox event → event bus → recovery orchestrator → policy candidate generation → audit ledger → recovery APIs`
 
-For example, a ₹4,999 card payment that fails with a bank decline may be routed to UPI when the customer’s UPI history indicates a higher chance of success. A blocked card is stopped immediately rather than retried.
+For example, a ₹4,999 card payment that fails with `CARD_DECLINED` triggers an outbox event published through the event bus. The recovery orchestrator opens a `RecoveryCase`, evaluates policy, scores and ranks `SWITCH_TO_UPI` (85% probability) as primary and `PAYMENT_LINK` (65% probability) as fallback, logs reason codes to `audit_logs`, and prevents duplicate event delivery. Hard failures like `FRAUD_REJECTED` or `BLOCKED_CARD` immediately transition to `STOPPED` with a `STOP_RECOVERY` guard.
 
 ## Who it serves
 
-- **Merchants:** reduce failed-payment revenue loss and understand recovery performance.
-- **Operations teams:** inspect why a decision was made and what action was taken.
-- **Customers:** receive fewer unhelpful retries and more relevant recovery journeys.
+- **Merchants:** reduce failed-payment revenue loss and track recovery funnel performance in real time.
+- **Operations teams:** inspect why a decision was made, what action was selected, and inspect full audit timelines.
+- **Customers:** receive frictionless, context-aware recovery journeys rather than repetitive failure loops.
 
 ## Current foundation
 
-- FastAPI application with versioned API structure (`/api/v1/events/...`)
-- `/health` endpoint with active database connectivity probe
-- Alembic database migration management (`001_initial_schema.py`)
-- Request correlation IDs, structured JSON / text logging, and unhandled exception handling
-- Configurable CORS middleware for dashboard integrations
-- Multi-stage Dockerfile with unprivileged `appuser` (UID 1001) and container `HEALTHCHECK`
-- Docker Compose stack with PostgreSQL, Redis, health checks, and named network (`recoverx-net`)
-- SQLAlchemy payment/recovery/audit/outbox models
-- Idempotent `payment.failed` ingestion with audit and transactional outbox records
-- Deterministic policy gate that stops hard failures before recovery actions
-- Automated testing suite with in-memory SQLite fixtures and TestClient dependency injection
+- **FastAPI Application (v0.4.0):** Modular routes (`/health`, `/api/v1/events`, `/api/v1/simulator`, `/api/v1/transactions`, `/api/v1/recovery`)
+- **Real-Time Event Pipeline:**
+  - **In-Memory & Async Event Bus:** Topic subscriptions, wildcard support, error isolation boundaries, operational metrics.
+  - **Transactional Outbox Publisher:** Chronological batch publishing from `outbox_events` with atomic publication timestamps.
+  - **Recovery Orchestrator:** Idempotent consumer keyed by `processed_events`, deterministic candidate action ranking, and downstream domain event generation.
+  - **Dead-Letter Quarantine:** Isolates malformed or poison events in `quarantine_events` with SHA-256 hash diagnostics.
+- **Payment Simulator Engine:** Multi-gateway payment attempts, 17+ Indian & global failure codes, 6 probabilistic outage scenarios, batch generation, and CLI tools.
+- **Database & Migrations:** 10 transactional models in PostgreSQL with Alembic versioning (`001_initial_schema.py`, `002_add_processed_and_quarantine_events.py`).
+- **Container Infrastructure:** Multi-stage Dockerfile, unprivileged `appuser`, automated startup migration entrypoint, and Docker Compose with health checks.
+- **Automated Test Suite:** 35 passing tests covering database schema, simulators, event bus, outbox publisher, orchestrator idempotency, and API endpoints.
 
 ## Architecture
 
 ```text
-Dashboard (future)
+Payment Ingestion / Simulator
+       ↓ (atomic database commit)
+PostgreSQL (Transactions, Attempts, OutboxEvents, AuditLogs)
        ↓
-FastAPI API Gateway (CORS enabled)
+Outbox Publisher Service / Worker Daemon
        ↓
-Payment / Event / Recovery Orchestrator (planned modules)
+Event Bus (payment.failed.v1)
        ↓
-Failure Intelligence + Customer Context + Decision Engine + Bounded Agent
+Recovery Orchestrator (Idempotent Consumer via processed_events)
        ↓
-PostgreSQL (Alembic)     Redis     ML model (future)
+Policy Evaluation & Candidate Action Generator
+       ↓ (updates recovery_cases, recovery_actions, audit_logs)
+Recovery Query & Pipeline APIs
 ```
-
-See [architecture documentation](docs/architecture.md) for ownership and extension points.
 
 ## Recovery policy reference
 
-| Failure category | Example | Recovery posture |
-| --- | --- | --- |
-| Temporary | `TIMEOUT`, `NETWORK_ERROR` | Safe retry or delayed retry may be considered |
-| Payment method | `CARD_DECLINED`, `UPI_FAILURE` | Consider an alternate permitted method |
-| Customer action | `OTP_TIMEOUT`, `3DS_FAILURE` | Request customer action; do not blindly retry |
-| Hard failure | `BLOCKED_CARD`, `FRAUD_REJECTED` | Stop recovery immediately |
-
-Candidate actions are `RETRY_SAME_METHOD`, `SWITCH_TO_UPI`, `SWITCH_TO_CARD`, `SWITCH_TO_NETBANKING`, `DELAYED_RETRY`, `CUSTOMER_NOTIFICATION`, `PAYMENT_LINK`, and `STOP_RECOVERY`.
-
-## Success metrics
-
-The primary metric is **recovered GMV**. Later iterations will also measure recovery rate, incremental recovery rate versus a generic retry baseline, revenue at risk, recovery cost, average recovery time, attempts per transaction, retry reduction, customer friction, and recovery action performance.
+| Failure category | Example Codes | Recovery Posture | Generated Actions |
+| --- | --- | --- | --- |
+| **Payment method** | `CARD_DECLINED`, `CARD_TYPE_NOT_SUPPORTED`, `MANDATE_FAILED` | Switch to alternate permitted instrument | `SWITCH_TO_UPI` (Primary), `PAYMENT_LINK` |
+| **Customer action** | `OTP_TIMEOUT`, `3DS_FAILURE`, `INSUFFICIENT_FUNDS`, `INCORRECT_PIN` | Prompt customer interaction | `CUSTOMER_NOTIFICATION` (Primary), `PAYMENT_LINK` |
+| **Temporary** | `TIMEOUT`, `NETWORK_ERROR`, `UPI_FAILURE`, `GATEWAY_ERROR` | Exponential backoff retry | `DELAYED_RETRY` (Primary), `RETRY_SAME_METHOD` |
+| **Hard failure** | `BLOCKED_CARD`, `FRAUD_REJECTED`, `INVALID_ACCOUNT`, `EXPIRED_CARD` | Stop recovery immediately | `STOP_RECOVERY` (Expected Value = 0.00) |
 
 ## Quick start
 
@@ -80,50 +75,53 @@ uvicorn backend.app.main:app --reload
 
 Open `http://127.0.0.1:8000/health`. Interactive OpenAPI docs are available at `http://127.0.0.1:8000/docs`.
 
-### Try the event pipeline
+### Run the Outbox Worker CLI
 
-With the application running, submit a normalized failed-payment event:
+```bash
+# Run a single outbox publisher pass
+python -m backend.app.worker --once
+
+# Inspect pipeline metrics and backlog
+python -m backend.app.worker --status
+
+# Run continuous background worker daemon
+python -m backend.app.worker --interval 2.0 --batch-size 100
+```
+
+### Try the End-to-End Recovery Pipeline
 
 ```powershell
-Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/events/payment-failures -ContentType application/json -Body '{"external_transaction_id":"txn-demo-001","merchant_id":"merchant-demo","amount":4999,"payment_method":"CARD","attempt_number":1,"failure_code":"CARD_DECLINED"}'
+# 1. Simulate a card decline failure
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/simulator/payments -ContentType application/json -Body '{"amount":4999,"payment_method":"CARD","gateway":"RAZORPAY","target_outcome":"FAIL","target_failure_code":"CARD_DECLINED"}'
+
+# 2. Process pending outbox events through the event pipeline
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/recovery/pipeline/process
+
+# 3. View the generated recovery case and ranked candidate actions
+Invoke-RestMethod -Method Get -Uri http://127.0.0.1:8000/api/v1/recovery/cases
 ```
 
-The API creates source-of-truth transaction/attempt/failure/audit/outbox records in one database transaction. Re-submitting the exact same event produces an idempotent duplicate-safe `200` response.
-
-### Docker
-
-Run the full production-hardened stack:
+### Running Tests
 
 ```bash
-docker compose up --build
-```
-
-The stack automatically launches PostgreSQL with healthchecks, applies pending Alembic migrations via `entrypoint.sh`, and starts the FastAPI service under the non-root `appuser`.
-
-### Tests
-
-```bash
-pytest
+pytest -v
 ```
 
 ## Documentation
 
+- [Day 5 Real-Time Event Pipeline & Recovery Service](docs/day-5-real-time-event-pipeline.md)
+- [Day 4 Payment Simulator & Transaction Lifecycle](docs/day-4-payment-simulator.md)
 - [Day 3 Project Foundation & Hardening](docs/day-3-project-foundation.md)
-- [Day 2 system architecture blueprint](docs/day-2-system-architecture.md)
-- [Event flow](docs/event-flow.md)
-- [Service architecture](docs/service-architecture.md)
-- [Persistence architecture](docs/persistence-architecture.md)
-- [Bounded agent architecture](docs/agent-architecture.md)
-- [ML architecture](docs/ml-architecture.md)
-- [Dashboard architecture](docs/dashboard-architecture.md)
-- [Integration contracts](docs/integration-contracts.md)
-- [Reliability and security](docs/reliability-and-security.md)
-- [Architecture delivery plan](docs/architecture-delivery-plan.md)
-- [Foundation architecture](docs/architecture.md)
-- [API boundaries](docs/api.md)
-- [Database schema](docs/database.md)
-- [Day 1 scope](docs/day-1-foundation.md)
-- [Development guide](docs/development.md)
+- [Day 2 System Architecture Blueprint](docs/day-2-system-architecture.md)
+- [Event Flow & Delivery Semantics](docs/event-flow.md)
+- [Service Architecture](docs/service-architecture.md)
+- [Persistence Architecture](docs/persistence-architecture.md)
+- [Bounded Agent Architecture](docs/agent-architecture.md)
+- [ML Architecture](docs/ml-architecture.md)
+- [Dashboard Architecture](docs/dashboard-architecture.md)
+- [Integration Contracts](docs/integration-contracts.md)
+- [Reliability & Security](docs/reliability-and-security.md)
+- [Architecture Delivery Plan](docs/architecture-delivery-plan.md)
 
 ## Roadmap
 
@@ -132,10 +130,11 @@ pytest
 | Day 1 | API gateway foundation, health probe, logging | Complete |
 | Day 2 | Domain models, event ingestion slice, policy gate | Complete |
 | Day 3 | Project foundation hardening, Alembic migrations, Docker security, test suite | Complete |
-| Day 4–6 | Payment simulator, events, customer context, failure intelligence | Next |
-| Day 7–10 | Dataset, recovery model, deterministic decision engine, bounded agent | Planned |
-| Day 11–14 | Recovery workflows, dashboard, evaluation, demo and hardening | Planned |
+| Day 4 | Payment simulator, realistic transaction lifecycle, failure codes, query APIs | Complete |
+| Day 5 | Real-time event pipeline (failure events → outbox → event bus → recovery orchestrator) | Complete |
+| Day 6–10 | Customer context, decision engine, ML shadow scoring, bounded agent | Next |
+| Day 11–14 | Recovery workflows, dashboard projections, evaluation, demo and hardening | Planned |
 
 ## License
 
-This repository is currently provided for hackathon and portfolio evaluation.
+This repository is provided for hackathon evaluation and production deployment demonstration.

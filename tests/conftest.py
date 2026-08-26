@@ -9,7 +9,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from backend.app.db import get_db
+from backend.app.db import get_db, reset_session_factory, set_session_factory
 from backend.app.main import app
 from backend.app.models.base import Base
 import backend.app.models.recovery  # noqa: F401
@@ -36,6 +36,7 @@ def db_session(engine) -> Generator[Session, None, None]:
     testing_session_local = sessionmaker(
         bind=connection, autoflush=False, autocommit=False, expire_on_commit=False
     )
+    set_session_factory(testing_session_local)
     session = testing_session_local()
 
     yield session
@@ -43,6 +44,7 @@ def db_session(engine) -> Generator[Session, None, None]:
     session.close()
     transaction.rollback()
     connection.close()
+    reset_session_factory()
 
 
 @pytest.fixture

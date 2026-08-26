@@ -32,6 +32,8 @@ def test_all_expected_tables_are_registered() -> None:
         "recovery_actions",
         "outbox_events",
         "audit_logs",
+        "processed_events",
+        "quarantine_events",
     }
     actual_tables = set(Base.metadata.tables.keys())
     assert expected_tables.issubset(actual_tables)

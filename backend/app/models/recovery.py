@@ -143,3 +143,31 @@ class AuditLog(TimestampedModel, Base):
     actor: Mapped[str] = mapped_column(String(64))
     reason_codes: Mapped[list[str]] = mapped_column(JSON, default=list)
     metadata_: Mapped[dict[str, Any]] = mapped_column("metadata", JSON, default=dict)
+
+
+class ProcessedEvent(TimestampedModel, Base):
+    __tablename__ = "processed_events"
+    __table_args__ = (
+        Index("uq_processed_events_consumer_event", "consumer_name", "event_id", unique=True),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    consumer_name: Mapped[str] = mapped_column(String(64), index=True)
+    event_id: Mapped[str] = mapped_column(String(128), index=True)
+    event_type: Mapped[str] = mapped_column(String(96))
+    processed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class QuarantineEvent(TimestampedModel, Base):
+    __tablename__ = "quarantine_events"
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    source_event_id: Mapped[str | None] = mapped_column(String(128), index=True, nullable=True)
+    event_type: Mapped[str | None] = mapped_column(String(96), nullable=True)
+    consumer_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    reason: Mapped[str] = mapped_column(String(255))
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    payload_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="QUARANTINED")
+    replayed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
