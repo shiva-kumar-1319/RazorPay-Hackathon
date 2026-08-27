@@ -24,12 +24,13 @@ def main():
     single_parser.add_argument("--scenario", type=str, default="NORMAL_BALANCED", help="Simulation scenario preset")
     single_parser.add_argument("--merchant", type=str, help="Merchant ID")
 
-    # Batch simulation
-    batch_parser = subparsers.add_parser("batch", help="Simulate a batch of transactions")
-    batch_parser.add_argument("--count", type=int, default=10, help="Number of transactions to simulate")
-    batch_parser.add_argument("--scenario", type=str, default="NORMAL_BALANCED", help="Simulation scenario preset")
-    batch_parser.add_argument("--merchant", type=str, help="Merchant ID")
-    batch_parser.add_argument("--success-rate", type=float, help="Override success rate (0.0 to 1.0)")
+    # Seed customer personas
+    seed_parser = subparsers.add_parser("seed-customers", help="Seed multi-transaction customer intelligence personas")
+    seed_parser.add_argument("--merchant", type=str, default="merch_101", help="Merchant ID")
+
+    # Inspect customer intelligence
+    inspect_parser = subparsers.add_parser("inspect-customer", help="Inspect customer payment behavior and intelligence")
+    inspect_parser.add_argument("--customer-id", type=str, required=True, help="External customer ID (e.g. cust_vip_priya)")
 
     args = parser.parse_args()
     if not args.command:
@@ -42,7 +43,48 @@ def main():
     simulator = PaymentSimulator(session)
 
     try:
-        if args.command == "single":
+        if args.command == "seed-customers":
+            res = simulator.seed_customer_personas(merchant_id=args.merchant)
+            print("\n=== Seed Customer Personas Result ===")
+            print(f"Status:               {res['message']}")
+            print(f"Customers Seeded:     {res['seeded_customers']}")
+            print(f"Transactions Created: {res['seeded_transactions']}")
+            print(f"Attempts Recorded:    {res['seeded_attempts']}")
+            print("\nPersonas:")
+            for name in res["personas"]:
+                print(f"  - {name}")
+
+        elif args.command == "inspect-customer":
+            from backend.app.models.recovery import Customer
+            from backend.app.services.customer_intelligence import get_customer_payment_behavior, get_customer_detail
+            from sqlalchemy import select
+
+            cust = session.scalar(
+                select(Customer).where(Customer.external_customer_id == args.customer_id)
+            )
+            if not cust:
+                print(f"Customer with external ID '{args.customer_id}' not found.")
+                return
+
+            detail = get_customer_detail(session, cust.id)
+            behavior = get_customer_payment_behavior(session, cust.id)
+            intel = detail.intelligence
+
+            print(f"\n=== Customer Intelligence: {detail.name or detail.external_customer_id} ===")
+            print(f"External Customer ID:    {detail.external_customer_id}")
+            print(f"Merchant ID:             {detail.merchant_id}")
+            print(f"Risk Tier / Segment:     {detail.risk_segment} / {intel.behavioral_segment}")
+            print(f"Preferred Method:        {intel.preferred_payment_method}")
+            print(f"Lifetime GMV (Spent):    INR {intel.total_spent:,.2f} ({intel.total_transactions} txns)")
+            print(f"Success Rate:            {float(intel.success_rate) * 100:.1f}%")
+            print(f"Recovery Yield:          {float(intel.recovery_rate) * 100:.1f}% (INR {intel.total_recovered_amount:,.2f})")
+            print(f"Risk Score:              {intel.risk_score}")
+            print(f"Retry Tolerance:         {behavior.retry_tolerance_score * 100:.0f}%")
+            print("\nPayment Method Breakdown:")
+            for m in behavior.methods:
+                print(f"  - {m.method:12s}: {m.successful_attempts}/{m.total_attempts} successful ({m.success_rate * 100:.1f}%) | INR {m.total_volume:,.2f}")
+
+        elif args.command == "single":
             scenario_enum = SimulationScenario(args.scenario)
             req = CreateSimulatedPaymentRequest(
                 amount=Decimal(str(args.amount)) if args.amount else None,
