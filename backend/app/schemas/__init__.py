@@ -1,1 +1,80 @@
 """Pydantic request and response contracts."""
+
+from backend.app.schemas.customers import (
+    CustomerCreateRequest,
+    CustomerDetailResponse,
+    CustomerFeaturesSnapshot,
+    CustomerIntelligenceDetail,
+    CustomerListResponse,
+    CustomerPaymentBehaviorResponse,
+    CustomerRead,
+    CustomerRecoveryHistoryItem,
+    CustomerRecoveryHistoryResponse,
+    CustomerSummaryItem,
+    CustomerUpdateRequest,
+    PaymentMethodStat,
+)
+from backend.app.schemas.events import DomainEventEnvelope, IngestPaymentFailedEventRequest
+from backend.app.schemas.health import HealthResponse
+from backend.app.schemas.recovery import (
+    OutboxPublishResponse,
+    PipelineProcessResponse,
+    PipelineStatusResponse,
+    RecoveryActionRead,
+    RecoveryCaseDetail,
+    RecoveryCaseListResponse,
+    RecoveryCaseRead,
+)
+from backend.app.schemas.simulator import (
+    BatchSimulationRequest,
+    BatchSimulationResponse,
+    SimulatePaymentRequest,
+    SimulatePaymentResponse,
+)
+from backend.app.schemas.transactions import (
+    CustomerSummary,
+    FailureEventSummary,
+    PaymentAttemptSummary,
+    RecoveryActionSummary,
+    RecoveryCaseSummary,
+    TransactionDetailResponse,
+    TransactionListItem,
+    TransactionListResponse,
+)
+
+__all__ = [
+    "CustomerCreateRequest",
+    "CustomerDetailResponse",
+    "CustomerFeaturesSnapshot",
+    "CustomerIntelligenceDetail",
+    "CustomerListResponse",
+    "CustomerPaymentBehaviorResponse",
+    "CustomerRead",
+    "CustomerRecoveryHistoryItem",
+    "CustomerRecoveryHistoryResponse",
+    "CustomerSummaryItem",
+    "CustomerUpdateRequest",
+    "PaymentMethodStat",
+    "DomainEventEnvelope",
+    "IngestPaymentFailedEventRequest",
+    "HealthResponse",
+    "OutboxPublishResponse",
+    "PipelineProcessResponse",
+    "PipelineStatusResponse",
+    "RecoveryActionRead",
+    "RecoveryCaseDetail",
+    "RecoveryCaseListResponse",
+    "RecoveryCaseRead",
+    "BatchSimulationRequest",
+    "BatchSimulationResponse",
+    "SimulatePaymentRequest",
+    "SimulatePaymentResponse",
+    "CustomerSummary",
+    "FailureEventSummary",
+    "PaymentAttemptSummary",
+    "RecoveryActionSummary",
+    "RecoveryCaseSummary",
+    "TransactionDetailResponse",
+    "TransactionListItem",
+    "TransactionListResponse",
+]
