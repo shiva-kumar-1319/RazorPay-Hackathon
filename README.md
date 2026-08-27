@@ -6,56 +6,62 @@
 
 Failed payments create silent revenue loss. A generic “try again” message ignores why a payment failed, what has worked for this customer before, and whether another attempt is safe or worthwhile. RecoverX is built to identify recoverable failures, choose a permitted recovery path, execute a bounded workflow, and measure recovered GMV with a complete audit trail.
 
-**Status:** Day 5 Real-Time Event Pipeline & Recovery Service complete. The platform features an in-process asynchronous EventBus, transactional Outbox Publisher, idempotent Recovery Orchestrator with `processed_events` deduplication, dead-letter `quarantine_events` handling, deterministic candidate action generation, standalone worker CLI daemon, and complete recovery query APIs.
+**Status:** Day 6 Transaction & Customer Intelligence complete. The platform features historical customer behavioral profiling, payment instrument preference calculation, recovery yield analytics, point-in-time normalized ML feature vectors, persona simulator seeding, and customer-personalized recovery action ranking.
 
 ## Product story
 
-`Failed payment → failure diagnosis → outbox event → event bus → recovery orchestrator → policy candidate generation → audit ledger → recovery APIs`
+`Failed payment → failure diagnosis + customer intelligence context → outbox event → event bus → recovery orchestrator → personalized candidate action ranking → audit ledger → recovery APIs`
 
-For example, a ₹4,999 card payment that fails with `CARD_DECLINED` triggers an outbox event published through the event bus. The recovery orchestrator opens a `RecoveryCase`, evaluates policy, scores and ranks `SWITCH_TO_UPI` (85% probability) as primary and `PAYMENT_LINK` (65% probability) as fallback, logs reason codes to `audit_logs`, and prevents duplicate event delivery. Hard failures like `FRAUD_REJECTED` or `BLOCKED_CARD` immediately transition to `STOPPED` with a `STOP_RECOVERY` guard.
+For example, a ₹4,999 card payment that fails with `CARD_DECLINED` triggers an outbox event published through the event bus. The recovery orchestrator resolves the customer's payment profile, observes strong historical UPI affinity (`UPI_MOBILE_PREFERRED`), boosts `SWITCH_TO_UPI` (92% probability), logs behavioral reason codes (`CUSTOMER_HISTORICAL_UPI_AFFINITY`, `RECOMMENDED_SAFE_UPI`) to `audit_logs`, and provides point-in-time ML feature snapshots for downstream decision engines.
 
 ## Who it serves
 
-- **Merchants:** reduce failed-payment revenue loss and track recovery funnel performance in real time.
-- **Operations teams:** inspect why a decision was made, what action was selected, and inspect full audit timelines.
-- **Customers:** receive frictionless, context-aware recovery journeys rather than repetitive failure loops.
+- **Merchants:** reduce failed-payment revenue loss and track customer lifetime spend and recovery conversion.
+- **Operations teams:** inspect why a decision was made, what customer context was applied, and inspect full audit timelines.
+- **Customers:** receive frictionless, personalized recovery journeys aligned with their past payment habits.
 
 ## Current foundation
 
-- **FastAPI Application (v0.4.0):** Modular routes (`/health`, `/api/v1/events`, `/api/v1/simulator`, `/api/v1/transactions`, `/api/v1/recovery`)
+- **FastAPI Application (v0.5.0):** Modular routes (`/health`, `/api/v1/customers`, `/api/v1/events`, `/api/v1/simulator`, `/api/v1/transactions`, `/api/v1/recovery`)
+- **Transaction & Customer Intelligence:**
+  - **Behavioral Profiling & Segmentation:** Categorizes customers into `VIP_HIGH_VALUE`, `UPI_MOBILE_PREFERRED`, `CARD_DECLINE_PRONE_RECOVERABLE`, `HIGH_FAILURE_RISK`, `NEW_CUSTOMER`.
+  - **Payment Instrument Analytics:** Success rate per payment method, attempt heatmap by hour of day, retry tolerance score, channel affinity.
+  - **Recovery History Yield:** Tracks customer-level recovery cases, conversion rates, and recovered GMV.
+  - **Point-in-Time ML Feature Store:** Standardized numerical feature vector extraction `[tx_count, success_rate, recency_days, upi_affinity, card_affinity, avg_amount_log, failure_streak, recovery_rate, risk_score]`.
+  - **Persona Seeding Engine:** Instantly seed VIP, UPI mobile, card decline prone, and first-time buyer personas.
 - **Real-Time Event Pipeline:**
   - **In-Memory & Async Event Bus:** Topic subscriptions, wildcard support, error isolation boundaries, operational metrics.
   - **Transactional Outbox Publisher:** Chronological batch publishing from `outbox_events` with atomic publication timestamps.
-  - **Recovery Orchestrator:** Idempotent consumer keyed by `processed_events`, deterministic candidate action ranking, and downstream domain event generation.
+  - **Recovery Orchestrator:** Idempotent consumer keyed by `processed_events`, customer-aware candidate action ranking, and downstream domain event generation.
   - **Dead-Letter Quarantine:** Isolates malformed or poison events in `quarantine_events` with SHA-256 hash diagnostics.
-- **Payment Simulator Engine:** Multi-gateway payment attempts, 17+ Indian & global failure codes, 6 probabilistic outage scenarios, batch generation, and CLI tools.
-- **Database & Migrations:** 10 transactional models in PostgreSQL with Alembic versioning (`001_initial_schema.py`, `002_add_processed_and_quarantine_events.py`).
+- **Payment Simulator Engine:** Multi-gateway payment attempts, 17+ Indian & global failure codes, 6 probabilistic outage scenarios, batch generation, customer persona seeding, and CLI tools.
+- **Database & Migrations:** 11 transactional models in PostgreSQL with Alembic versioning (`001_initial_schema.py`, `002_add_processed_and_quarantine_events.py`, `003_add_customer_intelligence.py`).
 - **Container Infrastructure:** Multi-stage Dockerfile, unprivileged `appuser`, automated startup migration entrypoint, and Docker Compose with health checks.
-- **Automated Test Suite:** 35 passing tests covering database schema, simulators, event bus, outbox publisher, orchestrator idempotency, and API endpoints.
+- **Automated Test Suite:** 45 passing tests covering database schema, simulators, event bus, outbox publisher, orchestrator idempotency, customer intelligence, and API endpoints.
 
 ## Architecture
 
 ```text
 Payment Ingestion / Simulator
        ↓ (atomic database commit)
-PostgreSQL (Transactions, Attempts, OutboxEvents, AuditLogs)
+PostgreSQL (Customers, CustomerIntelligence, Transactions, Attempts, OutboxEvents, AuditLogs)
        ↓
 Outbox Publisher Service / Worker Daemon
        ↓
 Event Bus (payment.failed.v1)
        ↓
-Recovery Orchestrator (Idempotent Consumer via processed_events)
+Recovery Orchestrator (Idempotent Consumer + Customer Intelligence Context)
        ↓
-Policy Evaluation & Candidate Action Generator
-       ↓ (updates recovery_cases, recovery_actions, audit_logs)
-Recovery Query & Pipeline APIs
+Policy Evaluation & Personalized Candidate Action Generator
+       ↓ (updates recovery_cases, recovery_actions, customer_intelligence, audit_logs)
+Customer & Recovery Query APIs
 ```
 
 ## Recovery policy reference
 
 | Failure category | Example Codes | Recovery Posture | Generated Actions |
 | --- | --- | --- | --- |
-| **Payment method** | `CARD_DECLINED`, `CARD_TYPE_NOT_SUPPORTED`, `MANDATE_FAILED` | Switch to alternate permitted instrument | `SWITCH_TO_UPI` (Primary), `PAYMENT_LINK` |
+| **Payment method** | `CARD_DECLINED`, `CARD_TYPE_NOT_SUPPORTED`, `MANDATE_FAILED` | Switch to alternate permitted instrument (boosted if UPI affinity) | `SWITCH_TO_UPI` (Primary), `PAYMENT_LINK` |
 | **Customer action** | `OTP_TIMEOUT`, `3DS_FAILURE`, `INSUFFICIENT_FUNDS`, `INCORRECT_PIN` | Prompt customer interaction | `CUSTOMER_NOTIFICATION` (Primary), `PAYMENT_LINK` |
 | **Temporary** | `TIMEOUT`, `NETWORK_ERROR`, `UPI_FAILURE`, `GATEWAY_ERROR` | Exponential backoff retry | `DELAYED_RETRY` (Primary), `RETRY_SAME_METHOD` |
 | **Hard failure** | `BLOCKED_CARD`, `FRAUD_REJECTED`, `INVALID_ACCOUNT`, `EXPIRED_CARD` | Stop recovery immediately | `STOP_RECOVERY` (Expected Value = 0.00) |
@@ -75,29 +81,22 @@ uvicorn backend.app.main:app --reload
 
 Open `http://127.0.0.1:8000/health`. Interactive OpenAPI docs are available at `http://127.0.0.1:8000/docs`.
 
-### Run the Outbox Worker CLI
-
-```bash
-# Run a single outbox publisher pass
-python -m backend.app.worker --once
-
-# Inspect pipeline metrics and backlog
-python -m backend.app.worker --status
-
-# Run continuous background worker daemon
-python -m backend.app.worker --interval 2.0 --batch-size 100
-```
-
-### Try the End-to-End Recovery Pipeline
+### Seed Customer Personas & Try Customer Intelligence
 
 ```powershell
-# 1. Simulate a card decline failure
-Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/simulator/payments -ContentType application/json -Body '{"amount":4999,"payment_method":"CARD","gateway":"RAZORPAY","target_outcome":"FAIL","target_failure_code":"CARD_DECLINED"}'
+# 1. Seed realistic customer personas (VIP, UPI-only, Card decline prone, New user)
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/simulator/seed-customers?merchant_id=merch_101
 
-# 2. Process pending outbox events through the event pipeline
+# 2. View customer directory with computed intelligence & lifetime spend
+Invoke-RestMethod -Method Get -Uri http://127.0.0.1:8000/api/v1/customers?merchant_id=merch_101
+
+# 3. Simulate a card decline failure for one of the seeded customers
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/simulator/payments -ContentType application/json -Body '{"merchant_id":"merch_101","external_customer_id":"cust_vip_priya","amount":15000,"payment_method":"CARD","target_outcome":"FAIL","target_failure_code":"CARD_DECLINED"}'
+
+# 4. Process pending outbox events through the event pipeline
 Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/recovery/pipeline/process
 
-# 3. View the generated recovery case and ranked candidate actions
+# 5. Inspect personalized recovery case and audit logs
 Invoke-RestMethod -Method Get -Uri http://127.0.0.1:8000/api/v1/recovery/cases
 ```
 
@@ -109,6 +108,7 @@ pytest -v
 
 ## Documentation
 
+- [Day 6 Transaction & Customer Intelligence](docs/day-6-customer-intelligence.md)
 - [Day 5 Real-Time Event Pipeline & Recovery Service](docs/day-5-real-time-event-pipeline.md)
 - [Day 4 Payment Simulator & Transaction Lifecycle](docs/day-4-payment-simulator.md)
 - [Day 3 Project Foundation & Hardening](docs/day-3-project-foundation.md)
@@ -132,7 +132,8 @@ pytest -v
 | Day 3 | Project foundation hardening, Alembic migrations, Docker security, test suite | Complete |
 | Day 4 | Payment simulator, realistic transaction lifecycle, failure codes, query APIs | Complete |
 | Day 5 | Real-time event pipeline (failure events → outbox → event bus → recovery orchestrator) | Complete |
-| Day 6–10 | Customer context, decision engine, ML shadow scoring, bounded agent | Next |
+| Day 6 | Transaction & Customer Intelligence (profiling, payment behavior, ML feature store, personas) | Complete |
+| Day 7–10 | Decision engine, deterministic baseline, ML shadow scoring, bounded agent | Next |
 | Day 11–14 | Recovery workflows, dashboard projections, evaluation, demo and hardening | Planned |
 
 ## License
