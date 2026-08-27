@@ -9,6 +9,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from backend.app.api.customers import router as customers_router
 from backend.app.api.events import router as events_router
 from backend.app.api.health import router as health_router
 from backend.app.api.recovery import router as recovery_router
@@ -28,7 +29,7 @@ async def lifespan(_: FastAPI):
         initialize_database()
     # Ensure orchestrator event subscriptions are initialized
     _ = recovery_orchestrator
-    logging.getLogger(__name__).info("Starting %s in %s (version 0.4.0)", settings.app_name, settings.app_env)
+    logging.getLogger(__name__).info("Starting %s in %s (version 0.5.0)", settings.app_name, settings.app_env)
     yield
     logging.getLogger(__name__).info("Stopping %s", settings.app_name)
 
@@ -36,8 +37,8 @@ async def lifespan(_: FastAPI):
 settings = get_settings()
 app = FastAPI(
     title=settings.app_name,
-    version="0.4.0",
-    description="Day 5 Real-Time Event Pipeline & Recovery Service for RecoverX AI Revenue Recovery Engine.",
+    version="0.5.0",
+    description="Day 6 Transaction & Customer Intelligence for RecoverX AI Revenue Recovery Engine.",
     lifespan=lifespan,
 )
 
@@ -52,6 +53,7 @@ app.add_middleware(
 
 app.include_router(health_router)
 app.include_router(events_router)
+app.include_router(customers_router)
 app.include_router(simulator_router)
 app.include_router(transactions_router)
 app.include_router(recovery_router)
