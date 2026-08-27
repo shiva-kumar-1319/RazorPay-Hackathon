@@ -13,6 +13,7 @@ from backend.app.schemas.simulator import (
     PaymentSimulationResponse,
     ScenarioInfoResponse,
     ScenarioMetadata,
+    SeedCustomersResponse,
     SimulateAttemptRequest,
     SimulateBatchRequest,
 )
@@ -129,3 +130,20 @@ def get_simulation_scenarios() -> ScenarioInfoResponse:
         payment_methods=[m.value for m in PaymentMethod],
         gateways=[g.value for g in Gateway],
     )
+
+
+@router.post(
+    "/seed-customers",
+    response_model=SeedCustomersResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Seed realistic customer intelligence personas",
+)
+def seed_customer_intelligence_personas(
+    merchant_id: str = "merch_101",
+    db: Session = Depends(get_db),
+) -> SeedCustomersResponse:
+    """Seed multi-transaction customer personas (VIP, UPI-only, Card decline prone, New user)."""
+    simulator = PaymentSimulator(db)
+    result = simulator.seed_customer_personas(merchant_id=merchant_id)
+    return SeedCustomersResponse(**result)
+

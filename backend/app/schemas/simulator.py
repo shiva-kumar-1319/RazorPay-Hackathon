@@ -95,3 +95,13 @@ class ScenarioInfoResponse(BaseModel):
     failure_codes: list[FailureCodeMetadata]
     payment_methods: list[str]
     gateways: list[str]
+
+
+class SeedCustomersResponse(BaseModel):
+    seeded_customers: int
+    seeded_transactions: int
+    seeded_attempts: int
+    customer_ids: list[str]
+    personas: list[str]
+    message: str
+

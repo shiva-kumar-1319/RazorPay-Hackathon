@@ -469,6 +469,14 @@ class PaymentSimulator:
         self.session.commit()
         self.session.refresh(transaction)
 
+        # Trigger customer intelligence computation if customer exists
+        if transaction.customer_id:
+            try:
+                from backend.app.services.customer_intelligence import compute_customer_intelligence
+                compute_customer_intelligence(self.session, transaction.customer_id, persist=True)
+            except Exception:
+                pass
+
         return PaymentSimulationResponse(
             transaction_id=transaction.id,
             external_transaction_id=transaction.external_transaction_id,
@@ -495,3 +503,167 @@ class PaymentSimulator:
             },
             created_at=transaction.created_at,
         )
+
+    def seed_customer_personas(self, merchant_id: str = "merch_101") -> dict[str, Any]:
+        """Seed multi-transaction customer personas for customer intelligence demonstration."""
+        from backend.app.services.customer_intelligence import compute_customer_intelligence
+
+        personas_data = [
+            {
+                "external_id": "cust_vip_priya",
+                "name": "Priya Sharma",
+                "email": "priya.sharma@example.com",
+                "phone": "+919820112345",
+                "risk_segment": "VIP",
+                "preferred_method": "CARD",
+                "txns": [
+                    {"amount": Decimal("12500.00"), "method": "CARD", "status": "SUCCESS"},
+                    {"amount": Decimal("8999.00"), "method": "UPI", "status": "SUCCESS"},
+                    {"amount": Decimal("15000.00"), "method": "CARD", "status": "SUCCESS"},
+                    {"amount": Decimal("4500.00"), "method": "CARD", "status": "FAIL", "failure": "OTP_TIMEOUT", "retry_succ": "UPI"},
+                    {"amount": Decimal("22000.00"), "method": "CARD", "status": "SUCCESS"},
+                ],
+            },
+            {
+                "external_id": "cust_upi_aarav",
+                "name": "Aarav Patel",
+                "email": "aarav.patel@example.com",
+                "phone": "+919876543210",
+                "risk_segment": "STANDARD",
+                "preferred_method": "UPI",
+                "txns": [
+                    {"amount": Decimal("499.00"), "method": "UPI", "status": "SUCCESS"},
+                    {"amount": Decimal("1299.00"), "method": "UPI", "status": "SUCCESS"},
+                    {"amount": Decimal("850.00"), "method": "UPI", "status": "SUCCESS"},
+                    {"amount": Decimal("2499.00"), "method": "UPI", "status": "FAIL", "failure": "UPI_FAILURE", "retry_succ": "UPI"},
+                    {"amount": Decimal("750.00"), "method": "UPI", "status": "SUCCESS"},
+                ],
+            },
+            {
+                "external_id": "cust_decline_vikram",
+                "name": "Vikram Malhotra",
+                "email": "vikram.m@example.com",
+                "phone": "+919711223344",
+                "risk_segment": "STANDARD",
+                "preferred_method": "CARD",
+                "txns": [
+                    {"amount": Decimal("3500.00"), "method": "CARD", "status": "SUCCESS"},
+                    {"amount": Decimal("4999.00"), "method": "CARD", "status": "FAIL", "failure": "CARD_DECLINED", "retry_succ": "UPI"},
+                    {"amount": Decimal("5500.00"), "method": "CARD", "status": "FAIL", "failure": "CARD_TYPE_NOT_SUPPORTED", "retry_succ": "NETBANKING"},
+                    {"amount": Decimal("3200.00"), "method": "CARD", "status": "FAIL", "failure": "CARD_DECLINED"},
+                ],
+            },
+            {
+                "external_id": "cust_new_ananya",
+                "name": "Ananya Roy",
+                "email": "ananya.roy@example.com",
+                "phone": "+919655443322",
+                "risk_segment": "NEW",
+                "preferred_method": "UPI",
+                "txns": [
+                    {"amount": Decimal("1899.00"), "method": "UPI", "status": "SUCCESS"},
+                ],
+            },
+        ]
+
+        total_txns = 0
+        total_attempts = 0
+        customer_ids: list[str] = []
+        persona_names: list[str] = []
+
+        for p in personas_data:
+            customer = self.session.scalar(
+                select(Customer).where(Customer.external_customer_id == p["external_id"])
+            )
+            if customer is None:
+                customer = Customer(
+                    external_customer_id=p["external_id"],
+                    merchant_id=merchant_id,
+                    name=p["name"],
+                    email=p["email"],
+                    phone=p["phone"],
+                    risk_segment=p["risk_segment"],
+                    preferred_payment_method=p["preferred_method"],
+                )
+                self.session.add(customer)
+                self.session.flush()
+
+            customer_ids.append(str(customer.id))
+            persona_names.append(f"{p['name']} ({p['risk_segment']})")
+
+            for t_spec in p["txns"]:
+                ext_txn_id = f"txn_seed_{uuid4().hex[:12]}"
+                status_enum = TransactionStatus.SUCCEEDED if t_spec["status"] == "SUCCESS" else (
+                    TransactionStatus.SUCCEEDED if t_spec.get("retry_succ") else TransactionStatus.FAILED
+                )
+                txn = Transaction(
+                    external_transaction_id=ext_txn_id,
+                    merchant_id=merchant_id,
+                    customer_id=customer.id,
+                    amount=t_spec["amount"],
+                    currency="INR",
+                    status=status_enum,
+                    version=1,
+                )
+                self.session.add(txn)
+                self.session.flush()
+                total_txns += 1
+
+                # Attempt 1
+                if t_spec["status"] == "SUCCESS":
+                    att1 = PaymentAttempt(
+                        transaction_id=txn.id,
+                        attempt_number=1,
+                        payment_method=t_spec["method"],
+                        gateway="RAZORPAY",
+                        failure_code=None,
+                    )
+                    self.session.add(att1)
+                    total_attempts += 1
+                else:
+                    fail_code = t_spec["failure"]
+                    att1 = PaymentAttempt(
+                        transaction_id=txn.id,
+                        attempt_number=1,
+                        payment_method=t_spec["method"],
+                        gateway="RAZORPAY",
+                        failure_code=fail_code,
+                    )
+                    self.session.add(att1)
+                    self.session.flush()
+                    total_attempts += 1
+
+                    fail_event = FailureEvent(
+                        source_event_id=f"fe_{uuid4().hex[:12]}",
+                        transaction_id=txn.id,
+                        attempt_id=att1.id,
+                        failure_code=fail_code,
+                        category="PAYMENT_METHOD" if "CARD" in fail_code else "CUSTOMER_ACTION",
+                        recoverable=True,
+                        payload={"failure_code": fail_code},
+                    )
+                    self.session.add(fail_event)
+
+                    # Follow-up retry attempt if specified
+                    if t_spec.get("retry_succ"):
+                        att2 = PaymentAttempt(
+                            transaction_id=txn.id,
+                            attempt_number=2,
+                            payment_method=t_spec["retry_succ"],
+                            gateway="RAZORPAY",
+                            failure_code=None,
+                        )
+                        self.session.add(att2)
+                        total_attempts += 1
+
+            self.session.commit()
+            compute_customer_intelligence(self.session, customer.id, persist=True)
+
+        return {
+            "seeded_customers": len(personas_data),
+            "seeded_transactions": total_txns,
+            "seeded_attempts": total_attempts,
+            "customer_ids": customer_ids,
+            "personas": persona_names,
+            "message": f"Successfully seeded {len(personas_data)} customer personas with {total_txns} transactions",
+        }
