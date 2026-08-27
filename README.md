@@ -138,4 +138,4 @@ pytest -v
 
 ## License
 
-This repository is provided for hackathon evaluation and production deployment demonstration.
+This repository is provided under the Apache 2.0 License for enterprise payment recovery and production deployment demonstration.
