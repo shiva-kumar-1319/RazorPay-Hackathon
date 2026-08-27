@@ -37,6 +37,15 @@ from backend.app.schemas.customers import (
 logger = logging.getLogger("recoverx.customer_intelligence")
 
 
+def _normalize_dt(dt: datetime | None) -> datetime:
+    """Normalize datetime to UTC for timezone-safe comparisons."""
+    if dt is None:
+        return datetime.min.replace(tzinfo=timezone.utc)
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
 def compute_customer_intelligence(
     session: Session, customer_id: UUID, persist: bool = True
 ) -> CustomerIntelligence:
@@ -75,8 +84,9 @@ def compute_customer_intelligence(
     last_successful_method: str | None = None
     last_failure_code: str | None = None
 
-    for txn in sorted(transactions, key=lambda t: t.created_at):
-        if last_active_at is None or txn.created_at > last_active_at:
+    for txn in sorted(transactions, key=lambda t: _normalize_dt(t.created_at)):
+        txn_created_norm = _normalize_dt(txn.created_at)
+        if last_active_at is None or txn_created_norm > _normalize_dt(last_active_at):
             last_active_at = txn.created_at
 
         # Check transaction state
@@ -96,7 +106,8 @@ def compute_customer_intelligence(
             method_volumes[m] = method_volumes.get(m, Decimal("0.00")) + Decimal(str(txn.amount))
             
             if att.created_at:
-                if m not in method_last_used or att.created_at > method_last_used[m]:
+                att_created_norm = _normalize_dt(att.created_at)
+                if m not in method_last_used or att_created_norm > _normalize_dt(method_last_used[m]):
                     method_last_used[m] = att.created_at
                 h_key = str(att.created_at.hour)
                 hourly_counts[h_key] = hourly_counts.get(h_key, 0) + 1
@@ -149,7 +160,7 @@ def compute_customer_intelligence(
         preferred_method = "UPI"
 
     # Calculate recent failure streak
-    all_attempts_chronological.sort(key=lambda x: x[0], reverse=True)
+    all_attempts_chronological.sort(key=lambda x: _normalize_dt(x[0]), reverse=True)
     recent_failure_streak = 0
     for _, att, _ in all_attempts_chronological:
         if att.failure_code:
@@ -191,7 +202,7 @@ def compute_customer_intelligence(
     # Build standardized ML feature snapshot
     now = datetime.now(timezone.utc)
     recency_days = (
-        (now - last_active_at).total_seconds() / 86400.0
+        (now - _normalize_dt(last_active_at)).total_seconds() / 86400.0
         if last_active_at
         else 999.0
     )
@@ -228,10 +239,13 @@ def compute_customer_intelligence(
         float(risk_score),
     ]
 
-    intel = customer.intelligence
+    intel = session.scalar(
+        select(CustomerIntelligence).where(CustomerIntelligence.customer_id == customer.id)
+    )
     if intel is None:
         intel = CustomerIntelligence(customer_id=customer.id)
         session.add(intel)
+        session.flush()
 
     intel.total_transactions = total_txns
     intel.successful_transactions = successful_txns
