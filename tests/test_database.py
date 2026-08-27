@@ -25,6 +25,7 @@ from backend.app.models.recovery import (
 def test_all_expected_tables_are_registered() -> None:
     expected_tables = {
         "customers",
+        "customer_intelligence",
         "transactions",
         "payment_attempts",
         "failure_events",

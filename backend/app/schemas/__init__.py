@@ -14,7 +14,14 @@ from backend.app.schemas.customers import (
     CustomerUpdateRequest,
     PaymentMethodStat,
 )
-from backend.app.schemas.events import DomainEventEnvelope, IngestPaymentFailedEventRequest
+from backend.app.schemas.events import (
+    DomainEventEnvelope,
+    FailureClassifiedPayload,
+    IngestionResponse,
+    PaymentFailedEvent,
+    PaymentFailedPayload,
+    RecoveryCaseOpenedPayload,
+)
 from backend.app.schemas.health import HealthResponse
 from backend.app.schemas.recovery import (
     OutboxPublishResponse,
@@ -26,10 +33,15 @@ from backend.app.schemas.recovery import (
     RecoveryCaseRead,
 )
 from backend.app.schemas.simulator import (
-    BatchSimulationRequest,
     BatchSimulationResponse,
-    SimulatePaymentRequest,
-    SimulatePaymentResponse,
+    CreateSimulatedPaymentRequest,
+    FailureCodeMetadata,
+    PaymentSimulationResponse,
+    ScenarioInfoResponse,
+    ScenarioMetadata,
+    SeedCustomersResponse,
+    SimulateAttemptRequest,
+    SimulateBatchRequest,
 )
 from backend.app.schemas.transactions import (
     CustomerSummary,
@@ -56,7 +68,11 @@ __all__ = [
     "CustomerUpdateRequest",
     "PaymentMethodStat",
     "DomainEventEnvelope",
-    "IngestPaymentFailedEventRequest",
+    "FailureClassifiedPayload",
+    "IngestionResponse",
+    "PaymentFailedEvent",
+    "PaymentFailedPayload",
+    "RecoveryCaseOpenedPayload",
     "HealthResponse",
     "OutboxPublishResponse",
     "PipelineProcessResponse",
@@ -65,10 +81,15 @@ __all__ = [
     "RecoveryCaseDetail",
     "RecoveryCaseListResponse",
     "RecoveryCaseRead",
-    "BatchSimulationRequest",
     "BatchSimulationResponse",
-    "SimulatePaymentRequest",
-    "SimulatePaymentResponse",
+    "CreateSimulatedPaymentRequest",
+    "FailureCodeMetadata",
+    "PaymentSimulationResponse",
+    "ScenarioInfoResponse",
+    "ScenarioMetadata",
+    "SeedCustomersResponse",
+    "SimulateAttemptRequest",
+    "SimulateBatchRequest",
     "CustomerSummary",
     "FailureEventSummary",
     "PaymentAttemptSummary",
