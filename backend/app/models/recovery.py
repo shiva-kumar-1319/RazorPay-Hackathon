@@ -46,8 +46,46 @@ class Customer(TimestampedModel, Base):
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     external_customer_id: Mapped[str] = mapped_column(String(128), unique=True, index=True)
     merchant_id: Mapped[str] = mapped_column(String(128), index=True)
-    preferred_payment_method: Mapped[str | None] = mapped_column(String(32))
+    name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    phone: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    preferred_payment_method: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    risk_segment: Mapped[str] = mapped_column(String(32), default="STANDARD")
+    metadata_: Mapped[dict[str, Any]] = mapped_column("metadata", JSON, default=dict)
+
     transactions: Mapped[list[Transaction]] = relationship(back_populates="customer")
+    intelligence: Mapped[CustomerIntelligence | None] = relationship(
+        back_populates="customer", uselist=False, cascade="all, delete-orphan"
+    )
+
+
+class CustomerIntelligence(TimestampedModel, Base):
+    __tablename__ = "customer_intelligence"
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    customer_id: Mapped[UUID] = mapped_column(ForeignKey("customers.id"), unique=True, index=True)
+    total_transactions: Mapped[int] = mapped_column(Integer, default=0)
+    successful_transactions: Mapped[int] = mapped_column(Integer, default=0)
+    failed_transactions: Mapped[int] = mapped_column(Integer, default=0)
+    recovered_transactions: Mapped[int] = mapped_column(Integer, default=0)
+    total_spent: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0.00"))
+    total_recovered_amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0.00"))
+    success_rate: Mapped[Decimal] = mapped_column(Numeric(5, 4), default=Decimal("0.0000"))
+    recovery_rate: Mapped[Decimal] = mapped_column(Numeric(5, 4), default=Decimal("0.0000"))
+    preferred_payment_method: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    method_success_rates: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    method_usage_counts: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    recent_failure_streak: Mapped[int] = mapped_column(Integer, default=0)
+    average_transaction_value: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0.00"))
+    last_active_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_successful_method: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    last_failure_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    risk_score: Mapped[Decimal] = mapped_column(Numeric(5, 4), default=Decimal("0.1000"))
+    behavioral_segment: Mapped[str] = mapped_column(String(64), default="NEW_CUSTOMER")
+    features: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    computed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    customer: Mapped[Customer] = relationship(back_populates="intelligence")
 
 
 class Transaction(TimestampedModel, Base):
