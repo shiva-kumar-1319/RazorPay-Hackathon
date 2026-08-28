@@ -1,39 +1,17 @@
-"""Deterministic policy gate used before any model or agent recommendation."""
+"""Deterministic policy gate using the Failure Intelligence engine before any model or agent recommendation."""
 
 from dataclasses import dataclass
 
 from backend.app.models.recovery import ActionType
-
-
-HARD_STOP_CODES = {
-    "BLOCKED_CARD",
-    "INVALID_ACCOUNT",
-    "FRAUD_REJECTED",
-    "EXPIRED_CARD",
-    "LIMIT_EXCEEDED_HARD",
-}
-
-CUSTOMER_ACTION_CODES = {
-    "OTP_TIMEOUT",
-    "3DS_FAILURE",
-    "INSUFFICIENT_FUNDS",
-    "INCORRECT_PIN",
-    "USER_CANCELLED",
-}
-
-PAYMENT_METHOD_CODES = {
-    "CARD_DECLINED",
-    "CARD_TYPE_NOT_SUPPORTED",
-    "MANDATE_FAILED",
-}
-
-TEMPORARY_CODES = {
-    "TIMEOUT",
-    "NETWORK_ERROR",
-    "UPI_FAILURE",
-    "GATEWAY_ERROR",
-    "BANK_SERVER_DOWN",
-}
+from backend.app.schemas.failure import FailureClassificationRequest
+from backend.app.services.failure_intelligence import (
+    HARD_STOP_CODES,
+    CUSTOMER_ACTION_CODES,
+    PAYMENT_METHOD_CODES,
+    TEMPORARY_CODES,
+    TAXONOMY_CATALOG,
+    failure_intelligence_service,
+)
 
 
 @dataclass(frozen=True)
@@ -45,8 +23,10 @@ class PolicyResult:
 
 
 def evaluate_failure_policy(failure_code: str) -> PolicyResult:
-    """Classify a normalized failure code into safe candidate actions."""
-    normalized = failure_code.upper()
+    """Classify a failure code into safe candidate actions using Failure Intelligence."""
+    normalized = failure_code.strip().upper() if failure_code else "UNKNOWN"
+    
+    # 1. Direct codebook fast-path for exact canonical matches
     if normalized in HARD_STOP_CODES:
         return PolicyResult("HARD_FAILURE", False, (ActionType.STOP_RECOVERY,), ("HARD_STOP", normalized))
     if normalized in CUSTOMER_ACTION_CODES:
@@ -70,9 +50,30 @@ def evaluate_failure_policy(failure_code: str) -> PolicyResult:
             (ActionType.DELAYED_RETRY, ActionType.RETRY_SAME_METHOD),
             ("TRANSIENT_FAILURE", normalized),
         )
+
+    # 2. Check full Failure Intelligence service (for gateway codes, regex, or extended codes)
+    detail = failure_intelligence_service.classify_failure(FailureClassificationRequest(failure_code=failure_code))
+    
+    permitted_enum_actions = []
+    for act_str in detail.permitted_actions:
+        try:
+            permitted_enum_actions.append(ActionType(act_str))
+        except ValueError:
+            pass
+
+    if not permitted_enum_actions:
+        permitted_enum_actions = [ActionType.STOP_RECOVERY]
+
+    reason_code_prefix = {
+        "HARD_FAILURE": "HARD_STOP",
+        "CUSTOMER_ACTION": "CUSTOMER_ACTION_REQUIRED",
+        "PAYMENT_METHOD": "ALTERNATE_METHOD_PREFERRED",
+        "TEMPORARY": "TRANSIENT_FAILURE",
+    }.get(detail.category.value, "UNCLASSIFIED_FAILURE")
+
     return PolicyResult(
-        "UNKNOWN",
-        False,
-        (ActionType.STOP_RECOVERY,),
-        ("UNCLASSIFIED_FAILURE", normalized),
+        category=detail.category.value,
+        recoverable=detail.recoverable,
+        permitted_actions=tuple(permitted_enum_actions),
+        reason_codes=(reason_code_prefix, detail.normalized_code),
     )
