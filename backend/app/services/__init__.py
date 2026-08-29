@@ -10,6 +10,13 @@ from backend.app.services.customer_intelligence import (
     list_customers,
     update_customer,
 )
+from backend.app.services.decision_engine import (
+    ACTION_COST_MODEL,
+    RecoveryDecisionEngine,
+    ScoredAction,
+    calculate_expected_value,
+    recovery_decision_engine,
+)
 from backend.app.services.event_bus import EventBus, get_event_bus
 from backend.app.services.event_ingestion import ingest_payment_failure
 from backend.app.services.failure_intelligence import (
@@ -23,6 +30,11 @@ from backend.app.services.failure_intelligence import (
     failure_intelligence_service,
 )
 from backend.app.services.outbox_publisher import OutboxPublisherService, outbox_publisher
+from backend.app.services.prediction_model import (
+    RecoveryFeatureExtractor,
+    RecoveryPredictionModel,
+    recovery_prediction_model,
+)
 from backend.app.services.recovery_policy import PolicyResult, evaluate_failure_policy
 from backend.app.services.recovery_service import (
     RecoveryOrchestrator,
@@ -33,6 +45,7 @@ from backend.app.services.recovery_service import (
 )
 
 __all__ = [
+    "ACTION_COST_MODEL",
     "CUSTOMER_ACTION_CODES",
     "EventBus",
     "FailureIntelligenceService",
@@ -41,9 +54,14 @@ __all__ = [
     "OutboxPublisherService",
     "PAYMENT_METHOD_CODES",
     "PolicyResult",
+    "RecoveryDecisionEngine",
+    "RecoveryFeatureExtractor",
     "RecoveryOrchestrator",
+    "RecoveryPredictionModel",
+    "ScoredAction",
     "TAXONOMY_CATALOG",
     "TEMPORARY_CODES",
+    "calculate_expected_value",
     "compute_customer_intelligence",
     "create_customer",
     "evaluate_failure_policy",
@@ -59,6 +77,8 @@ __all__ = [
     "list_customers",
     "list_recovery_cases",
     "outbox_publisher",
+    "recovery_decision_engine",
     "recovery_orchestrator",
+    "recovery_prediction_model",
     "update_customer",
 ]

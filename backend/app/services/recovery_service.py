@@ -29,6 +29,7 @@ from backend.app.models.recovery import (
 )
 from backend.app.schemas.events import DomainEventEnvelope
 from backend.app.services.customer_intelligence import compute_customer_intelligence
+from backend.app.services.decision_engine import recovery_decision_engine
 from backend.app.services.event_bus import EventBus, get_event_bus
 from backend.app.services.recovery_policy import evaluate_failure_policy
 
@@ -161,7 +162,7 @@ class RecoveryOrchestrator:
             recovery_case = RecoveryCase(
                 transaction_id=transaction.id,
                 state=initial_state,
-                policy_version="policy.v1",
+                policy_version="policy.v2",
                 version=1,
             )
             session.add(recovery_case)
@@ -297,130 +298,85 @@ class RecoveryOrchestrator:
         reason_codes: list[str],
         customer_intel: CustomerIntelligence | None = None,
     ) -> list[RecoveryAction]:
-        """Generate ranked candidate recovery actions adhering to deterministic recovery taxonomy and customer context."""
+        """Generate ranked candidate recovery actions using ML Decision Engine.
+
+        Policy gates (which action types are valid per category) are preserved.
+        Probabilities and expected values are now ML-predicted and EV-optimised
+        via the RecoveryDecisionEngine instead of hardcoded heuristics.
+        """
         actions: list[RecoveryAction] = []
         customer_reasons: list[str] = []
 
-        # Customer behavioral boosts & tags
-        upi_prob_boost = Decimal("0.00")
-        card_prob_boost = Decimal("0.00")
-        link_prob_boost = Decimal("0.00")
-
+        # Customer behavioral tags for audit trail
         if customer_intel:
             seg = customer_intel.behavioral_segment
             pref = (customer_intel.preferred_payment_method or "").upper()
-            
             if seg == "VIP_HIGH_VALUE":
                 customer_reasons.append("CUSTOMER_VIP_TIER_PRIORITY")
-                upi_prob_boost += Decimal("0.05")
-                link_prob_boost += Decimal("0.05")
             elif seg == "UPI_MOBILE_PREFERRED" or pref == "UPI":
                 customer_reasons.append("CUSTOMER_HISTORICAL_UPI_AFFINITY")
-                upi_prob_boost += Decimal("0.07")
             elif seg == "CARD_DECLINE_PRONE_RECOVERABLE":
                 customer_reasons.append("CUSTOMER_REPEATED_CARD_DECLINE_HISTORY")
-                # Lower retry same method probability
-                card_prob_boost -= Decimal("0.10")
             elif seg == "HIGH_FAILURE_RISK":
                 customer_reasons.append("CUSTOMER_HIGH_FAILURE_STREAK_GUARD")
-            elif seg == "FIRST_TIME_SHOPPER" or seg == "NEW_CUSTOMER":
+            elif seg in ("FIRST_TIME_SHOPPER", "NEW_CUSTOMER"):
                 customer_reasons.append("CUSTOMER_NEW_PROFILE_BASELINE")
 
         effective_reasons = reason_codes + customer_reasons
 
+        # --- Determine candidate action types per category (policy gate) ---
+        _IDEMPOTENCY_SUFFIXES = {
+            ActionType.SWITCH_TO_UPI: "upi",
+            ActionType.PAYMENT_LINK: "link",
+            ActionType.SWITCH_TO_NETBANKING: "nb",
+            ActionType.CUSTOMER_NOTIFICATION: "notif",
+            ActionType.DELAYED_RETRY: "delretry",
+            ActionType.RETRY_SAME_METHOD: "sameretry",
+            ActionType.SWITCH_TO_CARD: "card",
+            ActionType.STOP_RECOVERY: "stop",
+        }
+
+        _REASON_SUFFIXES: dict[ActionType, list[str]] = {
+            ActionType.SWITCH_TO_UPI: ["RECOMMENDED_SAFE_UPI", "ISSUER_DECLINE_BYPASS"],
+            ActionType.PAYMENT_LINK: ["FALLBACK_CHECKOUT_LINK"],
+            ActionType.SWITCH_TO_NETBANKING: ["ALTERNATE_NETBANKING_ROUTE"],
+            ActionType.CUSTOMER_NOTIFICATION: ["FRICTIONLESS_APP_NOTIFICATION", "PROMPT_USER_RETRY"],
+            ActionType.DELAYED_RETRY: ["TEMPORARY_NETWORK_BACKOFF", "EXPONENTIAL_RETRY_SCHEDULE"],
+            ActionType.RETRY_SAME_METHOD: ["IMMEDIATE_RETRY_FALLBACK"],
+            ActionType.SWITCH_TO_CARD: ["ALTERNATE_CARD_ROUTE"],
+            ActionType.STOP_RECOVERY: ["HARD_STOP"],
+        }
+
         if category == "PAYMENT_METHOD" or failure_code in ("CARD_DECLINED", "CARD_TYPE_NOT_SUPPORTED", "MANDATE_FAILED"):
-            upi_prob = min(Decimal("0.9800"), Decimal("0.8500") + upi_prob_boost)
-            link_prob = min(Decimal("0.9000"), Decimal("0.6500") + link_prob_boost)
-            
-            actions.append(
-                RecoveryAction(
-                    recovery_case_id=recovery_case_id,
-                    action_type=ActionType.SWITCH_TO_UPI,
-                    idempotency_key=f"act_{recovery_case_id}_upi_{uuid4().hex[:8]}",
-                    selected=True,
-                    probability=upi_prob,
-                    expected_value=(amount * upi_prob).quantize(Decimal("0.01")),
-                    reason_codes=effective_reasons + ["RECOMMENDED_SAFE_UPI", "ISSUER_DECLINE_BYPASS"],
-                )
-            )
-            actions.append(
-                RecoveryAction(
-                    recovery_case_id=recovery_case_id,
-                    action_type=ActionType.PAYMENT_LINK,
-                    idempotency_key=f"act_{recovery_case_id}_link_{uuid4().hex[:8]}",
-                    selected=False,
-                    probability=link_prob,
-                    expected_value=(amount * link_prob).quantize(Decimal("0.01")),
-                    reason_codes=effective_reasons + ["FALLBACK_CHECKOUT_LINK"],
-                )
-            )
-
+            candidate_types = [ActionType.SWITCH_TO_UPI, ActionType.PAYMENT_LINK]
         elif category == "CUSTOMER_ACTION" or failure_code in ("OTP_TIMEOUT", "3DS_FAILURE", "INSUFFICIENT_FUNDS", "INCORRECT_PIN", "USER_CANCELLED"):
-            notif_prob = min(Decimal("0.9500"), Decimal("0.7200") + (Decimal("0.05") if customer_intel and customer_intel.behavioral_segment == "VIP_HIGH_VALUE" else Decimal("0.00")))
-            link_prob = min(Decimal("0.9000"), Decimal("0.6000") + link_prob_boost)
-
-            actions.append(
-                RecoveryAction(
-                    recovery_case_id=recovery_case_id,
-                    action_type=ActionType.CUSTOMER_NOTIFICATION,
-                    idempotency_key=f"act_{recovery_case_id}_notif_{uuid4().hex[:8]}",
-                    selected=True,
-                    probability=notif_prob,
-                    expected_value=(amount * notif_prob).quantize(Decimal("0.01")),
-                    reason_codes=effective_reasons + ["FRICTIONLESS_APP_NOTIFICATION", "PROMPT_USER_RETRY"],
-                )
-            )
-            actions.append(
-                RecoveryAction(
-                    recovery_case_id=recovery_case_id,
-                    action_type=ActionType.PAYMENT_LINK,
-                    idempotency_key=f"act_{recovery_case_id}_link_{uuid4().hex[:8]}",
-                    selected=False,
-                    probability=link_prob,
-                    expected_value=(amount * link_prob).quantize(Decimal("0.01")),
-                    reason_codes=effective_reasons + ["PERSISTENT_PAYMENT_URL"],
-                )
-            )
-
+            candidate_types = [ActionType.CUSTOMER_NOTIFICATION, ActionType.PAYMENT_LINK]
         elif category == "TEMPORARY" or failure_code in ("TIMEOUT", "NETWORK_ERROR", "UPI_FAILURE", "GATEWAY_ERROR", "BANK_SERVER_DOWN"):
-            delay_prob = Decimal("0.7800")
-            same_prob = max(Decimal("0.2000"), Decimal("0.5500") + card_prob_boost)
-
-            actions.append(
-                RecoveryAction(
-                    recovery_case_id=recovery_case_id,
-                    action_type=ActionType.DELAYED_RETRY,
-                    idempotency_key=f"act_{recovery_case_id}_delretry_{uuid4().hex[:8]}",
-                    selected=True,
-                    probability=delay_prob,
-                    expected_value=(amount * delay_prob).quantize(Decimal("0.01")),
-                    reason_codes=effective_reasons + ["TEMPORARY_NETWORK_BACKOFF", "EXPONENTIAL_RETRY_SCHEDULE"],
-                )
-            )
-            actions.append(
-                RecoveryAction(
-                    recovery_case_id=recovery_case_id,
-                    action_type=ActionType.RETRY_SAME_METHOD,
-                    idempotency_key=f"act_{recovery_case_id}_sameretry_{uuid4().hex[:8]}",
-                    selected=False,
-                    probability=same_prob,
-                    expected_value=(amount * same_prob).quantize(Decimal("0.01")),
-                    reason_codes=effective_reasons + ["IMMEDIATE_RETRY_FALLBACK"],
-                )
-            )
-
+            candidate_types = [ActionType.DELAYED_RETRY, ActionType.RETRY_SAME_METHOD]
         else:
-            # Default fallback
-            link_prob = Decimal("0.6000")
+            candidate_types = [ActionType.PAYMENT_LINK]
+
+        # --- Use Decision Engine for ML-predicted probabilities and EV ranking ---
+        scored_actions = recovery_decision_engine.evaluate_actions(
+            failure_category=category,
+            amount=float(amount),
+            candidate_action_types=candidate_types,
+            customer_intel=customer_intel,
+        )
+
+        for sa in scored_actions:
+            suffix = _IDEMPOTENCY_SUFFIXES.get(sa.action_type, "act")
+            extra_reasons = _REASON_SUFFIXES.get(sa.action_type, [])
+
             actions.append(
                 RecoveryAction(
                     recovery_case_id=recovery_case_id,
-                    action_type=ActionType.PAYMENT_LINK,
-                    idempotency_key=f"act_{recovery_case_id}_link_{uuid4().hex[:8]}",
-                    selected=True,
-                    probability=link_prob,
-                    expected_value=(amount * link_prob).quantize(Decimal("0.01")),
-                    reason_codes=effective_reasons + ["GENERIC_RECOVERY_LINK"],
+                    action_type=sa.action_type,
+                    idempotency_key=f"act_{recovery_case_id}_{suffix}_{uuid4().hex[:8]}",
+                    selected=sa.selected,
+                    probability=Decimal(str(sa.probability)).quantize(Decimal("0.0001")),
+                    expected_value=Decimal(str(sa.expected_value)).quantize(Decimal("0.01")),
+                    reason_codes=effective_reasons + extra_reasons + (["ML_EV_OPTIMAL"] if sa.selected else []),
                 )
             )
 

@@ -10,9 +10,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from backend.app.api.customers import router as customers_router
+from backend.app.api.decision import router as decision_router
 from backend.app.api.events import router as events_router
 from backend.app.api.failures import router as failures_router
 from backend.app.api.health import router as health_router
+from backend.app.api.prediction import router as prediction_router
 from backend.app.api.recovery import router as recovery_router
 from backend.app.api.simulator import router as simulator_router
 from backend.app.api.transactions import router as transactions_router
@@ -30,7 +32,7 @@ async def lifespan(_: FastAPI):
         initialize_database()
     # Ensure orchestrator event subscriptions are initialized
     _ = recovery_orchestrator
-    logging.getLogger(__name__).info("Starting %s in %s (version 0.6.0)", settings.app_name, settings.app_env)
+    logging.getLogger(__name__).info("Starting %s in %s (version 0.8.0)", settings.app_name, settings.app_env)
     yield
     logging.getLogger(__name__).info("Stopping %s", settings.app_name)
 
@@ -38,8 +40,8 @@ async def lifespan(_: FastAPI):
 settings = get_settings()
 app = FastAPI(
     title=settings.app_name,
-    version="0.6.0",
-    description="Day 7 Failure Intelligence — Multi-Category Classification (Temporary, Payment-Method, Customer-Action, Hard-Failure) for RecoverX AI Revenue Recovery Engine.",
+    version="0.8.0",
+    description="Day 8-9 Recovery Prediction Model & Decision Engine — ML-predicted recovery probabilities and expected-value-maximised action selection for RecoverX AI Revenue Recovery Engine.",
     lifespan=lifespan,
 )
 
@@ -59,6 +61,8 @@ app.include_router(customers_router)
 app.include_router(simulator_router)
 app.include_router(transactions_router)
 app.include_router(recovery_router)
+app.include_router(prediction_router)
+app.include_router(decision_router)
 
 
 @app.middleware("http")
