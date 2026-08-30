@@ -21,15 +21,15 @@ Client / Dashboard
 | Component | Responsibility | Status |
 | --- | --- | --- |
 | API gateway | Contract validation, request IDs, errors, versioned routes | Day 1 foundation |
-| Payment service | Payment lifecycle and simulator integration | Planned Day 3 |
-| Event interface | Publish/consume idempotent payment events | Planned Day 4 |
-| Customer intelligence | Historical customer and payment-method context | Planned Day 5 |
-| Failure intelligence | Classify failure and permitted next stages | Planned Day 6 |
-| Prediction | Estimate `P(success | action)` | Planned Day 8 |
-| Decision engine | Rank permitted actions by expected recovery value | Planned Day 9 |
-| Agent | Tool-only orchestration and explanation | Planned Day 10 |
+| Payment service | Payment lifecycle and simulator integration | Day 4 complete |
+| Event interface | Publish/consume idempotent payment events | Day 5 complete |
+| Customer intelligence | Historical customer and payment-method context | Day 6 complete |
+| Failure intelligence | Classify failure and permitted next stages | Day 7 complete |
+| Prediction | Estimate `P(success \| action)` | Day 8 complete |
+| Decision engine | Rank permitted actions by expected recovery value | Day 9 complete |
+| Agent | Tool-only orchestration and explanation | Day 10 complete |
 | Execution | Simulated, bounded recovery actions | Planned Day 11 |
-| Audit service | Immutable decision/outcome history | Designed Day 1; implemented incrementally |
+| Audit service | Immutable decision/outcome history | Day 1–10 complete |
 
 The future decision formula is `expected recovery value = probability of success × transaction amount − recovery cost`. Only actions permitted by failure policy and stopping rules may be ranked.
 

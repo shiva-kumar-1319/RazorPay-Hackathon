@@ -6,13 +6,19 @@
 
 Failed payments create silent revenue loss. A generic “try again” message ignores why a payment failed, what has worked for this customer before, and whether another attempt is safe or worthwhile. RecoverX is built to identify recoverable failures, choose a permitted recovery path, execute a bounded workflow, and measure recovered GMV with a complete audit trail.
 
-**Status:** Day 7 Failure Intelligence complete. The platform features deep failure categorization into four canonical classes (`TEMPORARY`, `PAYMENT_METHOD`, `CUSTOMER_ACTION`, `HARD_FAILURE`), multi-gateway error translation (Razorpay, Stripe, NPCI UPI, ISO 8583), semantic NLP regex error parsing with confidence scoring, plain-language customer and merchant diagnostics, retry limits & backoff calculation, and real-time failure anomaly detection.
+**Status:** Day 10 Bounded Payment Recovery Agent complete. The platform features an autonomous, tool-calling AI agent that investigates payment failures using 6 strictly allow-listed tools, evaluates failure policy rules, obtains ML recovery predictions and Cost-Aware Expected Value rankings, validates pre-execution safety guards, and generates explainable audit traces with tailored customer and merchant narratives.
 
 ## Product story
 
-`Failed payment → multi-gateway failure intelligence & NLP classification → customer intelligence context → outbox event → event bus → recovery orchestrator → personalized candidate action ranking → audit ledger → recovery & analytics APIs`
+`Failed payment → multi-gateway failure intelligence & NLP classification → customer intelligence context → outbox event → event bus → recovery orchestrator → bounded recovery agent (tool-calling loop: get_context → get_policy → score_candidates → create_plan → request_execution → write_explanation) → audit ledger → recovery & analytics APIs`
 
-For example, a raw bank decline response `"Issuer rejected charge: card validity expired"` is ingested. The Failure Intelligence Engine's semantic NLP parser maps it to `EXPIRED_CARD` with 98% confidence, classifies it as a **`HARD_FAILURE`**, sets max retries to 0, selects `STOP_RECOVERY`, logs compliance advisories, and provides an empathetic plain-language explanation for the customer.
+For example, when a card decline failure occurs on a ₹4,999 transaction:
+1. The **Payment Recovery Agent** executes `get_transaction_context` with automatic PII masking (email and phone tokenized).
+2. It calls `get_failure_policy` to confirm `PAYMENT_METHOD` permits `SWITCH_TO_UPI` and `PAYMENT_LINK` but strictly bans same-card retries.
+3. It calls `score_candidates` to get ML-predicted success probabilities (68.5%) and net Expected Value (₹3,412.50) factoring in execution costs and customer friction.
+4. It calls `create_recovery_plan` to formulate an approved draft plan with idempotency keys.
+5. It calls `request_execution` to validate executor guards (verifying status is not `SUCCEEDED` and retry limits are respected).
+6. It calls `write_explanation` to log structured customer guidance and technical root-cause logs in the immutable audit ledger.
 
 ## Who it serves
 
@@ -22,26 +28,18 @@ For example, a raw bank decline response `"Issuer rejected charge: card validity
 
 ## Current foundation
 
-- **FastAPI Application (v0.6.0):** Modular routes (`/health`, `/api/v1/failures`, `/api/v1/customers`, `/api/v1/events`, `/api/v1/simulator`, `/api/v1/transactions`, `/api/v1/recovery`)
-- **Failure Intelligence & Multi-Category Classification:**
-  - **4 Canonical Categories:** `TEMPORARY`, `PAYMENT_METHOD`, `CUSTOMER_ACTION`, `HARD_FAILURE`.
-  - **Multi-Gateway Error Translation:** Native dictionaries for Razorpay, Stripe, NPCI UPI (`U30`, `ZM`, `ZA`, `ZH`, `U69`, `U16`, `U28`), and ISO 8583 banking switch codes (`05`, `14`, `41`, `43`, `51`, `54`, `57`, `61`, `65`, `82`, `75`, `91`, `96`).
-  - **Semantic NLP Diagnostics Parser:** Extracts structured failure codes and confidence scores from unstructured bank messages.
-  - **Customer & Merchant Diagnostics:** Empathetic customer explanations + technical root-cause logs + regulatory compliance notes.
-  - **Failure Analytics & Anomaly Detection:** Real-time telemetry, category recovery conversion, transient outage detection, and fraud surge alerts.
-- **Transaction & Customer Intelligence:**
-  - **Behavioral Profiling & Segmentation:** Categorizes customers into `VIP_HIGH_VALUE`, `UPI_MOBILE_PREFERRED`, `CARD_DECLINE_PRONE_RECOVERABLE`, `HIGH_FAILURE_RISK`, `NEW_CUSTOMER`.
-  - **Payment Instrument Analytics:** Success rate per payment method, attempt heatmap by hour of day, retry tolerance score, channel affinity.
-  - **Point-in-Time ML Feature Store:** Standardized numerical feature vector extraction.
-  - **Persona Seeding Engine:** Instantly seed VIP, UPI mobile, card decline prone, and first-time buyer personas.
-- **Real-Time Event Pipeline:**
-  - **In-Memory & Async Event Bus:** Topic subscriptions, wildcard support, error isolation boundaries, operational metrics.
-  - **Transactional Outbox Publisher:** Chronological batch publishing from `outbox_events` with atomic publication timestamps.
-  - **Recovery Orchestrator:** Idempotent consumer keyed by `processed_events`, customer-aware candidate action ranking, and downstream domain event generation.
-  - **Dead-Letter Quarantine:** Isolates malformed or poison events in `quarantine_events`.
-- **Payment Simulator Engine:** Multi-gateway payment attempts, 17+ failure codes, 6 probabilistic outage scenarios, batch generation, customer persona seeding, and CLI tools.
-- **Database & Migrations:** 11 transactional models in PostgreSQL with Alembic versioning (`001_initial_schema.py`, `002_add_processed_and_quarantine_events.py`, `003_add_customer_intelligence.py`).
-- **Automated Test Suite:** 60 passing tests covering failure intelligence, gateway mapping, NLP parsing, database schema, simulators, event bus, outbox publisher, orchestrator idempotency, customer intelligence, and API endpoints.
+- **FastAPI Application (v0.9.0):** Modular routes (`/health`, `/api/v1/failures`, `/api/v1/customers`, `/api/v1/events`, `/api/v1/simulator`, `/api/v1/transactions`, `/api/v1/recovery`, `/api/v1/prediction`, `/api/v1/decision`, `/api/v1/agent`)
+- **Bounded Tool-Calling Recovery Agent (Day 10):**
+  - **6 Allow-Listed Tools:** `get_transaction_context`, `get_failure_policy`, `score_candidates`, `create_recovery_plan`, `request_execution`, `write_explanation`.
+  - **Non-Negotiable Guardrails:** No free-form SQL/network tools, mandatory PII masking, deterministic policy gate priority, and double-billing executor guards.
+  - **Autonomous Step Trace:** Step-by-step reasoning trace logging (`AgentStepTrace`) for auditability and compliance inspection.
+- **Cost-Aware Decision Engine (Day 9):** Net Expected Value ($EV = P \times A \times e^{-\lambda t} - \text{cost} - \text{friction}$) ranking and cost model configuration.
+- **Recovery Prediction Model (Day 8):** Calibrated Gradient-Boosted Classifier estimating $P(\text{success} \mid \text{action})$ with 26 engineered features.
+- **Failure Intelligence & Multi-Category Classification (Day 7):** Canonical categories (`TEMPORARY`, `PAYMENT_METHOD`, `CUSTOMER_ACTION`, `HARD_FAILURE`), multi-gateway dictionaries (Razorpay, Stripe, NPCI UPI, ISO 8583), semantic NLP regex parser, and anomaly alerts.
+- **Transaction & Customer Intelligence (Day 6):** Behavioral profiling (`VIP_HIGH_VALUE`, `UPI_MOBILE_PREFERRED`, etc.), instrument analytics, and point-in-time ML feature store.
+- **Real-Time Event Pipeline (Day 5):** Async event bus, transactional outbox publisher, idempotent consumer, and dead-letter quarantine.
+- **Payment Simulator Engine (Day 4):** Multi-gateway payment attempts, 17+ failure codes, 6 outage scenarios, and persona seeding.
+- **Automated Test Suite:** **125 passing tests** with 100% test pass rate across unit, integration, and API layers.
 
 ## Architecture
 
@@ -56,9 +54,15 @@ Event Bus (payment.failed.v1)
        ↓
 Recovery Orchestrator (Idempotent Consumer + Customer Intelligence Context)
        ↓
-Policy Evaluation & Personalized Candidate Action Generator
-       ↓ (updates recovery_cases, recovery_actions, customer_intelligence, audit_logs)
-Failure, Customer & Recovery Query APIs
+Bounded Recovery Agent Loop:
+  1. get_transaction_context (PII Redacted)
+  2. get_failure_policy (Category Rules & Stop Flags)
+  3. score_candidates (ML P(success) + Cost-Aware Net EV)
+  4. create_recovery_plan (Policy Constraint Validation & Idempotency Key)
+  5. request_execution (Pre-Execution Validation Guard: Status, Attempts, Policy)
+  6. write_explanation (Multi-Stakeholder Customer & Merchant Audit Trail)
+       ↓ (updates recovery_cases, recovery_actions, audit_logs, outbox_events)
+Failure, Customer, Prediction, Decision & Recovery Agent APIs
 ```
 
 ## Failure Intelligence & Recovery Policy Reference
@@ -85,42 +89,25 @@ uvicorn backend.app.main:app --reload
 
 Open `http://127.0.0.1:8000/health`. Interactive OpenAPI docs are available at `http://127.0.0.1:8000/docs`.
 
-### Failure Intelligence Quickstart Examples
+### Agent & Recovery Quickstart Examples
 
 ```powershell
-# 1. Classify a raw gateway error code (e.g. Razorpay)
-Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/failures/classify -ContentType application/json -Body '{"gateway":"RAZORPAY","gateway_code":"BAD_REQUEST_PAYMENT_DECLINED_BY_BANK"}'
+# 1. Discover registered allow-listed agent tools and safety guardrails
+Invoke-RestMethod -Method Get -Uri http://127.0.0.1:8000/api/v1/agent/tools
 
-# 2. Parse an unstructured bank error with Semantic NLP
-Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/failures/classify -ContentType application/json -Body '{"raw_message":"Card issuer reported online usage off for this debit card"}'
-
-# 3. Bulk classify multiple failures
-Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/failures/batch-classify -ContentType application/json -Body '{"items":[{"failure_code":"TIMEOUT"},{"gateway":"STRIPE","gateway_code":"insufficient_funds"},{"failure_code":"FRAUD_REJECTED"},{"raw_message":"online e-commerce disabled on card"}]}'
-
-# 4. View full Failure Taxonomy and gateway mappings
-Invoke-RestMethod -Method Get -Uri http://127.0.0.1:8000/api/v1/failures/taxonomy
-
-# 5. View live Failure Analytics & Anomaly Alerts
-Invoke-RestMethod -Method Get -Uri http://127.0.0.1:8000/api/v1/failures/analytics
-```
-
-### Seed Customer Personas & Try Customer Recovery
-
-```powershell
-# 1. Seed realistic customer personas (VIP, UPI-only, Card decline prone, New user)
+# 2. Seed realistic customer personas (VIP, UPI-only, Card decline prone, New user)
 Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/simulator/seed-customers?merchant_id=merch_101
 
-# 2. View customer directory with computed intelligence & lifetime spend
-Invoke-RestMethod -Method Get -Uri http://127.0.0.1:8000/api/v1/customers?merchant_id=merch_101
-
 # 3. Simulate a card decline failure for one of the seeded customers
-Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/simulator/payments -ContentType application/json -Body '{"merchant_id":"merch_101","external_customer_id":"cust_vip_priya","amount":15000,"payment_method":"CARD","target_outcome":"FAIL","target_failure_code":"CARD_DECLINED"}'
+$sim = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/simulator/payments -ContentType application/json -Body '{"merchant_id":"merch_101","external_customer_id":"cust_vip_priya","amount":4999,"payment_method":"CARD","target_outcome":"FAIL","target_failure_code":"CARD_DECLINED"}'
+$txnId = $sim.transaction_id
 
-# 4. Process pending outbox events through the event pipeline
-Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/recovery/pipeline/process
+# 4. Run autonomous agent investigation on the failed transaction
+$investigation = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/agent/investigate -ContentType application/json -Body (@{transaction_id=$txnId} | ConvertTo-Json)
+$investigation | ConvertTo-Json -Depth 5
 
-# 5. Inspect personalized recovery case and audit logs
-Invoke-RestMethod -Method Get -Uri http://127.0.0.1:8000/api/v1/recovery/cases
+# 5. Inspect the agent decision traces and audit logs
+Invoke-RestMethod -Method Get -Uri "http://127.0.0.1:8000/api/v1/agent/traces/$txnId"
 ```
 
 ## Running tests
@@ -129,4 +116,4 @@ Invoke-RestMethod -Method Get -Uri http://127.0.0.1:8000/api/v1/recovery/cases
 pytest -v
 ```
 
-All 60 tests will run against an in-memory test database with full coverage of the failure intelligence engine, customer intelligence, simulators, event bus, outbox publisher, and recovery APIs.
+All **125 tests** will run against an in-memory test database with full coverage of the bounded recovery agent, allow-listed tools, decision engine, prediction model, failure intelligence, customer intelligence, simulators, event bus, outbox publisher, and REST APIs.

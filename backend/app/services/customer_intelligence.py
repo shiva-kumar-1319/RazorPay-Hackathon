@@ -100,18 +100,18 @@ def compute_customer_intelligence(
         elif txn.status == TransactionStatus.FAILED:
             failed_txns += 1
 
-        for att in txn.attempts:
+        for att in sorted(txn.attempts, key=lambda a: (a.attempt_number or 1, _normalize_dt(a.created_at))):
             m = (att.payment_method or "UNKNOWN").upper()
             method_attempts[m] = method_attempts.get(m, 0) + 1
             method_volumes[m] = method_volumes.get(m, Decimal("0.00")) + Decimal(str(txn.amount))
             
-            if att.created_at:
-                att_created_norm = _normalize_dt(att.created_at)
-                if m not in method_last_used or att_created_norm > _normalize_dt(method_last_used[m]):
-                    method_last_used[m] = att.created_at
-                h_key = str(att.created_at.hour)
-                hourly_counts[h_key] = hourly_counts.get(h_key, 0) + 1
-                all_attempts_chronological.append((att.created_at, att, txn))
+            att_time = att.created_at or txn.created_at or datetime.now(timezone.utc)
+            att_created_norm = _normalize_dt(att_time)
+            if m not in method_last_used or att_created_norm > _normalize_dt(method_last_used[m]):
+                method_last_used[m] = att_time
+            h_key = str(att_time.hour)
+            hourly_counts[h_key] = hourly_counts.get(h_key, 0) + 1
+            all_attempts_chronological.append((att_time, att, txn))
 
             if att.failure_code:
                 method_failures[m] = method_failures.get(m, 0) + 1
@@ -138,7 +138,7 @@ def compute_customer_intelligence(
     recovery_rate = (
         Decimal(str(round(recovered_cases_count / len(recovery_candidate_cases), 4)))
         if recovery_candidate_cases
-        else (Decimal("1.0000") if recovered_txns > 0 else Decimal("0.0000"))
+        else Decimal("0.0000")
     )
 
     # Method success rates
@@ -160,7 +160,10 @@ def compute_customer_intelligence(
         preferred_method = "UPI"
 
     # Calculate recent failure streak
-    all_attempts_chronological.sort(key=lambda x: _normalize_dt(x[0]), reverse=True)
+    all_attempts_chronological.sort(
+        key=lambda x: (_normalize_dt(x[0]), _normalize_dt(x[2].created_at), str(x[2].id), x[1].attempt_number or 1),
+        reverse=True,
+    )
     recent_failure_streak = 0
     for _, att, _ in all_attempts_chronological:
         if att.failure_code:

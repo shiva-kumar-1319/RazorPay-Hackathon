@@ -44,8 +44,24 @@ from backend.app.services.recovery_service import (
     recovery_orchestrator,
 )
 
+from backend.app.services.agent_tools import (
+    AgentToolRegistry,
+    agent_tool_registry,
+    tool_create_recovery_plan,
+    tool_get_failure_policy,
+    tool_get_transaction_context,
+    tool_request_execution,
+    tool_score_candidates,
+    tool_write_explanation,
+)
+from backend.app.services.recovery_agent import (
+    PaymentRecoveryAgent,
+    payment_recovery_agent,
+)
+
 __all__ = [
     "ACTION_COST_MODEL",
+    "AgentToolRegistry",
     "CUSTOMER_ACTION_CODES",
     "EventBus",
     "FailureIntelligenceService",
@@ -53,6 +69,7 @@ __all__ = [
     "HARD_STOP_CODES",
     "OutboxPublisherService",
     "PAYMENT_METHOD_CODES",
+    "PaymentRecoveryAgent",
     "PolicyResult",
     "RecoveryDecisionEngine",
     "RecoveryFeatureExtractor",
@@ -61,6 +78,7 @@ __all__ = [
     "ScoredAction",
     "TAXONOMY_CATALOG",
     "TEMPORARY_CODES",
+    "agent_tool_registry",
     "calculate_expected_value",
     "compute_customer_intelligence",
     "create_customer",
@@ -77,8 +95,15 @@ __all__ = [
     "list_customers",
     "list_recovery_cases",
     "outbox_publisher",
+    "payment_recovery_agent",
     "recovery_decision_engine",
     "recovery_orchestrator",
     "recovery_prediction_model",
+    "tool_create_recovery_plan",
+    "tool_get_failure_policy",
+    "tool_get_transaction_context",
+    "tool_request_execution",
+    "tool_score_candidates",
+    "tool_write_explanation",
     "update_customer",
 ]
