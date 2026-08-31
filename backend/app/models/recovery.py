@@ -156,7 +156,34 @@ class RecoveryAction(TimestampedModel, Base):
     probability: Mapped[Decimal | None] = mapped_column(Numeric(5, 4))
     expected_value: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
     reason_codes: Mapped[list[str]] = mapped_column(JSON, default=list)
+    status: Mapped[str] = mapped_column(String(32), default="PENDING", index=True)
+    scheduled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    executed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    execution_channel: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    metadata_: Mapped[dict[str, Any]] = mapped_column("metadata", JSON, default=dict)
+
     recovery_case: Mapped[RecoveryCase] = relationship(back_populates="actions")
+    customer_sessions: Mapped[list[CustomerRecoverySession]] = relationship(
+        back_populates="recovery_action", cascade="all, delete-orphan"
+    )
+
+
+class CustomerRecoverySession(TimestampedModel, Base):
+    __tablename__ = "customer_recovery_sessions"
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    recovery_action_id: Mapped[UUID] = mapped_column(ForeignKey("recovery_actions.id"), index=True)
+    transaction_id: Mapped[UUID] = mapped_column(ForeignKey("transactions.id"), index=True)
+    token: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    status: Mapped[str] = mapped_column(String(32), default="ACTIVE", index=True)  # ACTIVE, COMPLETED, EXPIRED
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    payment_method_options: Mapped[list[str]] = mapped_column(JSON, default=list)
+    customer_notes: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    metadata_: Mapped[dict[str, Any]] = mapped_column("metadata", JSON, default=dict)
+
+    recovery_action: Mapped[RecoveryAction] = relationship(back_populates="customer_sessions")
+    transaction: Mapped[Transaction] = relationship()
 
 
 class OutboxEvent(TimestampedModel, Base):

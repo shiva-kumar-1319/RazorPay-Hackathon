@@ -58,6 +58,10 @@ from backend.app.services.recovery_agent import (
     PaymentRecoveryAgent,
     payment_recovery_agent,
 )
+from backend.app.services.recovery_execution import (
+    RecoveryExecutionEngine,
+    recovery_execution_engine,
+)
 
 __all__ = [
     "ACTION_COST_MODEL",
@@ -72,6 +76,7 @@ __all__ = [
     "PaymentRecoveryAgent",
     "PolicyResult",
     "RecoveryDecisionEngine",
+    "RecoveryExecutionEngine",
     "RecoveryFeatureExtractor",
     "RecoveryOrchestrator",
     "RecoveryPredictionModel",
@@ -97,6 +102,7 @@ __all__ = [
     "outbox_publisher",
     "payment_recovery_agent",
     "recovery_decision_engine",
+    "recovery_execution_engine",
     "recovery_orchestrator",
     "recovery_prediction_model",
     "tool_create_recovery_plan",

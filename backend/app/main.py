@@ -13,6 +13,7 @@ from backend.app.api.agent import router as agent_router
 from backend.app.api.customers import router as customers_router
 from backend.app.api.decision import router as decision_router
 from backend.app.api.events import router as events_router
+from backend.app.api.execution import router as execution_router
 from backend.app.api.failures import router as failures_router
 from backend.app.api.health import router as health_router
 from backend.app.api.prediction import router as prediction_router
@@ -33,7 +34,7 @@ async def lifespan(_: FastAPI):
         initialize_database()
     # Ensure orchestrator event subscriptions are initialized
     _ = recovery_orchestrator
-    logging.getLogger(__name__).info("Starting %s in %s (version 0.9.0)", settings.app_name, settings.app_env)
+    logging.getLogger(__name__).info("Starting %s in %s (version 0.10.0)", settings.app_name, settings.app_env)
     yield
     logging.getLogger(__name__).info("Stopping %s", settings.app_name)
 
@@ -41,8 +42,8 @@ async def lifespan(_: FastAPI):
 settings = get_settings()
 app = FastAPI(
     title=settings.app_name,
-    version="0.9.0",
-    description="Day 10 Bounded Tool-Calling Payment Recovery Agent — Investigates failures, fetches policy gates, scores candidate actions via ML prediction & EV optimization, enforces executor guards, and writes explainable audit traces for RecoverX.",
+    version="0.10.0",
+    description="Day 11 Recovery Execution Engine — Automated, bounded recovery execution workflows for retry, payment-method switch, delayed retry backoff scheduling, and interactive customer payment link sessions for RecoverX.",
     lifespan=lifespan,
 )
 
@@ -62,6 +63,7 @@ app.include_router(customers_router)
 app.include_router(simulator_router)
 app.include_router(transactions_router)
 app.include_router(recovery_router)
+app.include_router(execution_router)
 app.include_router(prediction_router)
 app.include_router(decision_router)
 app.include_router(agent_router)

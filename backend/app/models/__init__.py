@@ -12,6 +12,7 @@ from backend.app.models.recovery import (
     QuarantineEvent,
     RecoveryAction,
     RecoveryCase,
+    CustomerRecoverySession,
     Transaction,
 )
 
@@ -20,6 +21,7 @@ __all__ = [
     "Base",
     "Customer",
     "CustomerIntelligence",
+    "CustomerRecoverySession",
     "FailureEvent",
     "OutboxEvent",
     "PaymentAttempt",
