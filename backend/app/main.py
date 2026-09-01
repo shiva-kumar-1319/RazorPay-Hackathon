@@ -1,16 +1,20 @@
 """FastAPI application entry point for RecoverX."""
 
 import logging
+import os
 import time
 from contextlib import asynccontextmanager
+from pathlib import Path
 from uuid import uuid4
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from backend.app.api.agent import router as agent_router
 from backend.app.api.customers import router as customers_router
+from backend.app.api.dashboard import router as dashboard_router
 from backend.app.api.decision import router as decision_router
 from backend.app.api.events import router as events_router
 from backend.app.api.execution import router as execution_router
@@ -25,6 +29,10 @@ from backend.app.db import initialize_database
 from backend.app.logging import configure_logging
 from backend.app.services.recovery_service import recovery_orchestrator
 
+BASE_DIR = Path(__file__).resolve().parent
+STATIC_DIR = BASE_DIR / "static"
+TEMPLATES_DIR = BASE_DIR / "templates"
+
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
@@ -34,7 +42,7 @@ async def lifespan(_: FastAPI):
         initialize_database()
     # Ensure orchestrator event subscriptions are initialized
     _ = recovery_orchestrator
-    logging.getLogger(__name__).info("Starting %s in %s (version 0.10.0)", settings.app_name, settings.app_env)
+    logging.getLogger(__name__).info("Starting %s in %s (version 0.12.0)", settings.app_name, settings.app_env)
     yield
     logging.getLogger(__name__).info("Stopping %s", settings.app_name)
 
@@ -42,8 +50,8 @@ async def lifespan(_: FastAPI):
 settings = get_settings()
 app = FastAPI(
     title=settings.app_name,
-    version="0.10.0",
-    description="Day 11 Recovery Execution Engine — Automated, bounded recovery execution workflows for retry, payment-method switch, delayed retry backoff scheduling, and interactive customer payment link sessions for RecoverX.",
+    version="0.12.0",
+    description="Day 12 Real-Time Recovery & Analytics Dashboard — Live failed payments, autonomous agent decisions, execution workflows, recovery rates, and recovered GMV metrics for RecoverX.",
     lifespan=lifespan,
 )
 
@@ -56,6 +64,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Mount static assets
+if STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+# Mount API Routers
 app.include_router(health_router)
 app.include_router(events_router)
 app.include_router(failures_router)
@@ -67,6 +80,17 @@ app.include_router(execution_router)
 app.include_router(prediction_router)
 app.include_router(decision_router)
 app.include_router(agent_router)
+app.include_router(dashboard_router)
+
+
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+@app.get("/dashboard", response_class=HTMLResponse, include_in_schema=False)
+async def get_dashboard_page() -> HTMLResponse:
+    """Serve the interactive single-page dashboard application."""
+    html_file = TEMPLATES_DIR / "dashboard.html"
+    if html_file.exists():
+        return HTMLResponse(content=html_file.read_text(encoding="utf-8"))
+    return HTMLResponse(content="<h1>RecoverX Dashboard</h1><p>Dashboard template not found.</p>")
 
 
 @app.middleware("http")

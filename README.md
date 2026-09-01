@@ -4,11 +4,13 @@
 
 ## Why RecoverX
 
-Failed payments create silent revenue loss. A generic “try again” message ignores why a payment failed, what has worked for this customer before, and whether another attempt is safe or worthwhile. RecoverX is built to identify recoverable failures, choose a permitted recovery path, execute a bounded workflow, and measure recovered GMV with a complete audit tr**Status:** Day 11 Recovery Execution complete. The platform features an autonomous recovery execution engine implementing 4 core workflows: Immediate Retry (`RETRY_SAME_METHOD`), Payment-Method Switch (`SWITCH_TO_UPI`, `SWITCH_TO_CARD`, `SWITCH_TO_NETBANKING`), Delayed Retry Backoff & Scheduling (`DELAYED_RETRY`), and Interactive Customer Recovery Links (`CUSTOMER_NOTIFICATION`, `PAYMENT_LINK`) backed by a bounded AI agent, ML prediction model, and immutable audit ledger.
+Failed payments create silent revenue loss. A generic “try again” message ignores why a payment failed, what has worked for this customer before, and whether another attempt is safe or worthwhile. RecoverX is built to identify recoverable failures, choose a permitted recovery path, execute a bounded workflow, and measure recovered GMV with a complete audit trail.
+
+**Status:** **Day 12 Real-Time Recovery & Revenue Analytics Dashboard complete (v0.12.0).** The platform features a live interactive operations dashboard delivering real-time failed payments streaming, autonomous AI agent decision logs, recovery execution workflow tracking, multi-stage recovery conversion funnels, ML model calibration metrics, and recovered GMV analytics.
 
 ## Product story
 
-`Failed payment → multi-gateway failure intelligence & NLP classification → customer intelligence context → outbox event → event bus → recovery orchestrator → bounded recovery agent (get_context → get_policy → score_candidates → create_plan → request_execution → write_explanation) → recovery execution engine (retry / switch / delayed scheduler / customer recovery link) → audit ledger → recovery & analytics APIs`
+`Failed payment → multi-gateway failure intelligence & NLP classification → customer intelligence context → outbox event → event bus → recovery orchestrator → bounded recovery agent (get_context → get_policy → score_candidates → create_plan → request_execution → write_explanation) → recovery execution engine (retry / switch / delayed scheduler / customer recovery link) → audit ledger → real-time projection worker → interactive merchant & operations dashboard`
 
 For example, when a card decline failure occurs on a ₹4,999 transaction:
 1. The **Payment Recovery Agent** executes `get_transaction_context` with automatic PII masking (email and phone tokenized).
@@ -17,17 +19,24 @@ For example, when a card decline failure occurs on a ₹4,999 transaction:
 4. It calls `create_recovery_plan` to formulate an approved draft plan with idempotency keys.
 5. It calls `request_execution` to validate executor guards (verifying status is not `SUCCEEDED` and retry limits are respected).
 6. The **Recovery Execution Engine** executes `SWITCH_TO_UPI`, creating a new attempt routed via UPI intent, recovering the ₹4,999 payment and updating state to `RECOVERED`.
-7. It logs structured customer guidance and technical root-cause logs in the immutable audit ledger and publishes domain events.
+7. It logs structured customer guidance and technical root-cause logs in the immutable audit ledger.
+8. The **Dashboard Projection Service** instantly updates real-time KPIs: **+₹4,999.00 Recovered GMV**, increments the recovery rate, advances the conversion funnel, and streams the event to the live operations feed.
 
 ## Who it serves
 
-- **Merchants:** reduce failed-payment revenue loss, eliminate chargeback risks on bad cards, and monitor failure anomaly spikes.
-- **Operations & Finance teams:** inspect why a decision was made, review root cause diagnostics across gateways, and inspect full audit timelines.
+- **Merchants:** reduce failed-payment revenue loss, eliminate chargeback risks on bad cards, and monitor recovery KPIs & GMV live.
+- **Operations & Finance teams:** inspect why an AI decision was made, track the multi-stage conversion funnel, and inspect full audit timelines.
 - **Customers:** receive frictionless, personalized recovery journeys with clear explanations of why their payment was declined.
 
 ## Current foundation
 
-- **FastAPI Application (v0.10.0):** Modular routes (`/health`, `/api/v1/failures`, `/api/v1/customers`, `/api/v1/events`, `/api/v1/simulator`, `/api/v1/transactions`, `/api/v1/recovery`, `/api/v1/execution`, `/api/v1/prediction`, `/api/v1/decision`, `/api/v1/agent`)
+- **Interactive Merchant Dashboard (Day 12):**
+  - **Live Web Client:** Glassmorphism UI served at `http://127.0.0.1:8000/dashboard` and `http://127.0.0.1:8000/`.
+  - **Executive KPI Cards:** Failed Payments GMV, Recovered Revenue, Net Recovery Rate %, Incremental Revenue Gain, Average Recovery Turnaround, and Customer Friction Index.
+  - **Multi-Stage Conversion Funnel:** 4-stage funnel ($1. \text{Total Failed} \to 2. \text{Policy Eligible} \to 3. \text{Action Dispatched} \to 4. \text{Revenue Recovered}$) with category breakdowns and instrument switch routing matrix.
+  - **Live Feeds:** Real-time stream of failed payments with PII masking, agent decisions ledger, and workflow execution logs.
+  - **ML Model Health:** Calibrated ROC-AUC (94.2%+), accuracy (89.5%+), Brier score, feature weights, and score distribution.
+  - **Interactive Simulator:** One-click simulations for card declines, network timeouts, OTP drops, bank outages, and multi-scenario batches.
 - **Recovery Execution Engine (Day 11):**
   - **4 Workflows:** Immediate Retry (`RETRY_SAME_METHOD`), Payment-Method Switch (`SWITCH_TO_UPI`, `SWITCH_TO_CARD`, `SWITCH_TO_NETBANKING`), Delayed Retry with Exponential Backoff (`DELAYED_RETRY`), and Customer Recovery Links (`CUSTOMER_NOTIFICATION`, `PAYMENT_LINK`).
   - **Pre-Execution Guards:** Double-billing prevention (blocks already-`SUCCEEDED` payments), attempt ceiling limits, and hard failure terminal stops.
@@ -40,7 +49,7 @@ For example, when a card decline failure occurs on a ₹4,999 transaction:
 - **Transaction & Customer Intelligence (Day 6):** Behavioral profiling (`VIP_HIGH_VALUE`, `UPI_MOBILE_PREFERRED`, etc.), instrument analytics, and point-in-time ML feature store.
 - **Real-Time Event Pipeline (Day 5):** Async event bus, transactional outbox publisher, idempotent consumer, and dead-letter quarantine.
 - **Payment Simulator Engine (Day 4):** Multi-gateway payment attempts, 17+ failure codes, 6 outage scenarios, and persona seeding.
-- **Automated Test Suite:** **142 passing tests** with 100% test pass rate across unit, integration, and API layers.
+- **Automated Test Suite:** **157 passing tests** with 100% test pass rate across unit, projection, integration, and API layers.
 
 ## Architecture
 
@@ -51,29 +60,22 @@ PostgreSQL (Customers, CustomerIntelligence, Transactions, Attempts, RecoveryCas
        ↓
 Outbox Publisher Service / Worker Daemon
        ↓
-Event Bus (payment.failed.v1)
+Event Bus (payment.failed.v1, recovery.outcome.v1)
        ↓
 Recovery Orchestrator (Idempotent Consumer + Customer Intelligence Context)
        ↓
-Bounded Recovery Agent Loop (Tool-Calling Investigation)
+Bounded Recovery Agent Loop (Tool-Calling Investigation & EV Scoring)
        ↓
 Recovery Execution Engine:
    ├─ Immediate Retry (Same Method / Direct API)
    ├─ Payment-Method Switch (UPI / NetBanking / Card)
    ├─ Delayed Retry (Exponential Backoff + Scheduled Worker)
    └─ Customer Recovery (SMS / WhatsApp + Tokenized Payment Link)
-       ↓ (updates transactions, recovery_cases, recovery_actions, audit_logs, outbox_events)
-Failure, Customer, Prediction, Decision, Agent & Execution APIs
+       ↓ (State Updates, Audit Logs & Outbox Events)
+Dashboard Projection Engine (backend/app/services/dashboard_service.py)
+       ↓ (Overview KPIs, Funnels, Feeds, Model Health, Batch Simulations)
+REST APIs (/api/v1/dashboard/*) → Interactive Web UI (http://127.0.0.1:8000/dashboard)
 ```
-
-## Failure Intelligence & Recovery Policy Reference
-
-| Failure Category | Example Codes / Gateways | Posture & Permitted Actions | Max Retries | Backoff / Delay |
-| --- | --- | --- | --- | --- |
-| **`TEMPORARY`** | `TIMEOUT`, `NETWORK_ERROR`, `UPI_FAILURE`, `GATEWAY_ERROR`, `BANK_SERVER_DOWN` | Safe automated delayed retry with backoff | 3 | 45s – 120s (Exponential) |
-| **`PAYMENT_METHOD`** | `CARD_DECLINED`, `CARD_TYPE_NOT_SUPPORTED`, `MANDATE_FAILED`, `ECOMMERCE_DISABLED` | Switch to alternate instrument (UPI / NetBanking) | 1 | 0s (Instant switch) |
-| **`CUSTOMER_ACTION`** | `OTP_TIMEOUT`, `3DS_FAILURE`, `INSUFFICIENT_FUNDS`, `INCORRECT_PIN`, `USER_CANCELLED` | Prompt customer interaction / Send payment link | 2 | 15s – 60s (Push / SMS) |
-| **`HARD_FAILURE`** | `BLOCKED_CARD`, `FRAUD_REJECTED`, `INVALID_ACCOUNT`, `EXPIRED_CARD`, `LIMIT_EXCEEDED_HARD` | Strict terminal stop (Prevents chargebacks/fraud) | 0 | 0s (Terminal) |
 
 ## Quick start
 
@@ -88,42 +90,38 @@ alembic upgrade head
 uvicorn backend.app.main:app --reload
 ```
 
-Open `http://127.0.0.1:8000/health`. Interactive OpenAPI docs are available at `http://127.0.0.1:8000/docs`.
+Open `http://127.0.0.1:8000/dashboard` to launch the **Real-Time Recovery Dashboard**.
+Interactive OpenAPI docs are available at `http://127.0.0.1:8000/docs`.
 
-### Agent & Execution Quickstart Examples
+### Dashboard & Analytics Quickstart Examples
 
 ```powershell
-# 1. Seed realistic customer personas (VIP, UPI-only, Card decline prone, New user)
-Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/simulator/seed-customers?merchant_id=merch_101
+# 1. Fetch live overview KPI metrics (Failed GMV, Recovered GMV, Recovery Rate %)
+Invoke-RestMethod -Method Get -Uri "http://127.0.0.1:8000/api/v1/dashboard/overview?merchant_id=merch_101"
 
-# 2. Simulate a card decline failure for one of the seeded customers
-$sim = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/simulator/payments -ContentType application/json -Body '{"merchant_id":"merch_101","external_customer_id":"cust_vip_priya","amount":4999,"payment_method":"CARD","target_outcome":"FAIL","target_failure_code":"CARD_DECLINED"}'
-$txnId = $sim.transaction_id
+# 2. Inspect 4-stage recovery conversion funnel & method switch routing
+Invoke-RestMethod -Method Get -Uri "http://127.0.0.1:8000/api/v1/dashboard/funnel?merchant_id=merch_101"
 
-# 3. Run autonomous agent investigation on the failed transaction
-$investigation = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/agent/investigate -ContentType application/json -Body (@{transaction_id=$txnId} | ConvertTo-Json)
-$investigation | ConvertTo-Json -Depth 5
+# 3. Stream live failed payments feed with PII masking
+Invoke-RestMethod -Method Get -Uri "http://127.0.0.1:8000/api/v1/dashboard/live-failed-payments?merchant_id=merch_101&limit=10"
 
-# 4. Execute Payment-Method Switch to UPI
-$exec = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/execution/actions/execute -ContentType application/json -Body (@{transaction_id=$txnId; action_type="SWITCH_TO_UPI"; force_outcome="SUCCESS"} | ConvertTo-Json)
-$exec | ConvertTo-Json
+# 4. Stream autonomous AI agent decisions ledger & reasoning traces
+Invoke-RestMethod -Method Get -Uri "http://127.0.0.1:8000/api/v1/dashboard/agent-decisions?merchant_id=merch_101&limit=10"
 
-# 5. Create customer recovery payment link
-$link = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/execution/customer/create-link -ContentType application/json -Body (@{transaction_id=$txnId; channel="WHATSAPP"} | ConvertTo-Json)
-$token = $link.token
+# 5. Track recovery execution workflow attempts & switch routing
+Invoke-RestMethod -Method Get -Uri "http://127.0.0.1:8000/api/v1/dashboard/recovery-attempts?merchant_id=merch_101&limit=10"
 
-# 6. Customer views checkout and completes payment
-Invoke-RestMethod -Method Get -Uri "http://127.0.0.1:8000/api/v1/execution/customer/link/$token"
-Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/api/v1/execution/customer/link/$token/pay" -ContentType application/json -Body '{"payment_method":"UPI","simulate_outcome":"SUCCESS"}'
+# 6. Check ML prediction model health, ROC-AUC, and feature importances
+Invoke-RestMethod -Method Get -Uri "http://127.0.0.1:8000/api/v1/dashboard/model-health?merchant_id=merch_101"
 
-# 7. Check operational execution KPI metrics
-Invoke-RestMethod -Method Get -Uri http://127.0.0.1:8000/api/v1/execution/metrics
+# 7. Run an automated live simulation batch (6 scenarios with end-to-end recovery)
+Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/api/v1/dashboard/simulate-live-batch" -ContentType application/json -Body '{"merchant_id":"merch_101","count":6,"auto_investigate":true,"auto_execute":true}'
 ```
 
 ## Running tests
 
 ```bash
-pytest -v
+python -u run_tests.py
 ```
 
-All **142 tests** will run against an in-memory test database with full coverage of recovery execution workflows, bounded recovery agent, allow-listed tools, decision engine, prediction model, failure intelligence, customer intelligence, simulators, event bus, outbox publisher, and REST APIs.
+All **157 tests** run against an in-memory test database with full coverage of the real-time recovery dashboard, projection engine, execution workflows, bounded recovery agent, allow-listed tools, decision engine, prediction model, failure intelligence, customer intelligence, simulators, event bus, outbox publisher, and REST APIs.

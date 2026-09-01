@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RecoverX — Real-Time Payment Recovery & Revenue Analytics Dashboard</title>
+  <link rel="stylesheet" href="/static/dashboard.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>">
+</head>
+<body>
+  <div class="dashboard-container">
+    
+    <!-- Top Navbar -->
+    <header class="navbar">
+      <div class="brand-section">
+        <div class="brand-logo">⚡</div>
+        <div class="brand-info">
+          <h1>RecoverX <span class="ai-tag">AI Revenue Recovery</span></h1>
+          <p>Real-Time Merchant Recovery Operations & Analytics Engine</p>
+        </div>
+      </div>
+
+      <div class="nav-actions">
+        <div class="status-pill">
+          <div class="pulse-dot"></div>
+          <span>Live Ingestion Active</span>
+        </div>
+
+        <select id="tenant-select" class="tenant-select">
+          <option value="merch_101">Merchant: Staging Tech (merch_101)</option>
+          <option value="merch_enterprise_vip">Merchant: Enterprise VIP (merch_enterprise_vip)</option>
+        </select>
+
+        <button id="btn-sim-batch" class="btn btn-primary">
+          ⚡ Simulate Live Failures
+        </button>
+
+        <div style="font-size: 11px; color: var(--text-muted); text-align: right;">
+          <div>Auto-refresh: <strong id="refresh-countdown" style="color:var(--accent-primary);">4s</strong></div>
+          <div>Updated: <span id="last-updated-time" class="font-mono">--:--:--</span></div>
+        </div>
+      </div>
+    </header>
+
+    <!-- KPI Summary Hero Cards -->
+    <section class="kpi-grid">
+      <!-- Card 1: Failed GMV -->
+      <div class="kpi-card failed">
+        <div class="kpi-header">
+          <span class="kpi-title">Failed Payments GMV</span>
+          <div class="kpi-icon">✕</div>
+        </div>
+        <div id="val-failed-gmv" class="kpi-value font-mono">₹0.00</div>
+        <div class="kpi-footer">
+          <span id="val-failed-count">0 payments</span>
+          <span class="badge-tag badge-rose">Gross Lost GMV</span>
+        </div>
+      </div>
+
+      <!-- Card 2: Recovered GMV -->
+      <div class="kpi-card recovered">
+        <div class="kpi-header">
+          <span class="kpi-title">Recovered Revenue</span>
+          <div class="kpi-icon">✓</div>
+        </div>
+        <div id="val-recovered-gmv" class="kpi-value font-mono" style="color:var(--recovered-green);">₹0.00</div>
+        <div class="kpi-footer">
+          <span id="val-recovered-count">0 recovered</span>
+          <span id="val-incremental-gmv" class="badge-tag badge-green">+₹0.00 gain</span>
+        </div>
+      </div>
+
+      <!-- Card 3: Net Recovery Rate -->
+      <div class="kpi-card rate">
+        <div class="kpi-header">
+          <span class="kpi-title">Net Recovery Rate</span>
+          <div class="kpi-icon">🎯</div>
+        </div>
+        <div id="val-recovery-rate" class="kpi-value font-mono" style="color:#a5b4fc;">0.0%</div>
+        <div class="kpi-footer">
+          <span id="val-eligible-count">of 0 eligible</span>
+          <span id="val-gross-rate" class="badge-tag badge-indigo">Gross: 0%</span>
+        </div>
+      </div>
+
+      <!-- Card 4: Avg Time & Friction -->
+      <div class="kpi-card friction">
+        <div class="kpi-header">
+          <span class="kpi-title">Avg Recovery Time</span>
+          <div class="kpi-icon">⏱</div>
+        </div>
+        <div id="val-recovery-time" class="kpi-value font-mono" style="color:var(--cyan-agent);">0.0s</div>
+        <div class="kpi-footer">
+          <span id="val-open-cases">0 open cases</span>
+          <span id="val-friction-score" class="badge-tag badge-cyan">Friction: 1.0</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Navigation Tabs -->
+    <nav class="tabs-header">
+      <button class="tab-btn active" data-tab="tab-live-ops">⚡ Live Operations & Feed</button>
+      <button class="tab-btn" data-tab="tab-funnel">📊 Recovery Conversion Funnel</button>
+      <button class="tab-btn" data-tab="tab-agent">🤖 Agent Decisions Ledger</button>
+      <button class="tab-btn" data-tab="tab-workflows">🔄 Execution Workflows Tracker</button>
+      <button class="tab-btn" data-tab="tab-model">🧠 ML Model Health & Calibration</button>
+      <button class="tab-btn" data-tab="tab-simulator">🎮 Live Simulator Playground</button>
+    </nav>
+
+    <!-- TAB 1: Live Operations Feed -->
+    <div id="tab-live-ops" class="tab-content active">
+      <div class="section-panel">
+        <div class="panel-title-bar">
+          <div class="panel-title">
+            <span>⚡ Live Failed Payments & Action Pipeline</span>
+          </div>
+          <button class="btn btn-secondary" onclick="refreshAllData()">↻ Refresh Feed</button>
+        </div>
+
+        <div class="data-table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Transaction ID</th>
+                <th>Customer</th>
+                <th>Amount</th>
+                <th>Instrument</th>
+                <th>Failure Diagnostics</th>
+                <th>Status</th>
+                <th>Attempts</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="failed-payments-tbody">
+              <tr><td colspan="8" style="text-align:center; color:var(--text-muted); padding:30px;">Loading live stream...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Action Performance & Category Diagnostics Side-by-Side -->
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px;">
+        <div class="section-panel">
+          <div class="panel-title-bar">
+            <div class="panel-title">📈 Action Type Conversion Matrix</div>
+          </div>
+          <div class="data-table-wrapper">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Action Type</th>
+                  <th>Count</th>
+                  <th>Completed</th>
+                  <th>Success Rate</th>
+                  <th>Recovered GMV</th>
+                </tr>
+              </thead>
+              <tbody id="action-breakdown-body">
+                <tr><td colspan="5" style="text-align:center; color:var(--text-muted);">Loading...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="section-panel">
+          <div class="panel-title-bar">
+            <div class="panel-title">🛡️ Failure Category Diagnostics</div>
+          </div>
+          <div class="data-table-wrapper">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Category</th>
+                  <th>Failed</th>
+                  <th>Recovered</th>
+                  <th>Rate</th>
+                  <th>Failed GMV</th>
+                  <th>Recovered GMV</th>
+                </tr>
+              </thead>
+              <tbody id="category-breakdown-body">
+                <tr><td colspan="6" style="text-align:center; color:var(--text-muted);">Loading...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 2: Recovery Funnel -->
+    <div id="tab-funnel" class="tab-content">
+      <div class="section-panel">
+        <div class="panel-title-bar">
+          <div class="panel-title">📊 Multi-Stage Recovery Conversion Funnel</div>
+        </div>
+        
+        <div id="funnel-steps-container" class="funnel-container">
+          <!-- Dynamic 4-step cards -->
+        </div>
+
+        <div class="panel-title-bar" style="margin-top: 20px;">
+          <div class="panel-title">🔄 Payment Method Switch & Routing Performance</div>
+        </div>
+        <div class="data-table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Original Instrument</th>
+                <th></th>
+                <th>Recovered Instrument</th>
+                <th>Attempts</th>
+                <th>Recovered</th>
+                <th>Success Rate</th>
+                <th>Recovered GMV</th>
+              </tr>
+            </thead>
+            <tbody id="method-matrix-body">
+              <tr><td colspan="7" style="text-align:center; color:var(--text-muted);">Loading funnel matrix...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 3: Agent Decisions -->
+    <div id="tab-agent" class="tab-content">
+      <div class="section-panel">
+        <div class="panel-title-bar">
+          <div class="panel-title">🤖 Autonomous Recovery Agent Decisions & Tool Traces</div>
+        </div>
+        <div id="agent-decisions-feed">
+          <div style="text-align:center; color:var(--text-muted); padding:30px;">Loading agent decisions...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 4: Workflows Tracker -->
+    <div id="tab-workflows" class="tab-content">
+      <div class="section-panel">
+        <div class="panel-title-bar">
+          <div class="panel-title">🔄 Recovery Execution Workflows Log</div>
+        </div>
+        <div class="data-table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Transaction ID</th>
+                <th>Workflow</th>
+                <th>Action</th>
+                <th>Switch Routing</th>
+                <th>Amount</th>
+                <th>Status</th>
+                <th>Timestamp</th>
+              </tr>
+            </thead>
+            <tbody id="attempts-tbody">
+              <tr><td colspan="7" style="text-align:center; color:var(--text-muted); padding:30px;">Loading attempts...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 5: Model Health -->
+    <div id="tab-model" class="tab-content">
+      <div class="section-panel">
+        <div class="panel-title-bar">
+          <div class="panel-title">🧠 ML Recovery Prediction Model Metrics & Calibration</div>
+        </div>
+
+        <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:16px; margin-bottom:24px;">
+          <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-card); border-radius:var(--radius-md); padding:16px; text-align:center;">
+            <div style="font-size:11px; color:var(--text-muted);">MODEL VERSION</div>
+            <div id="mh-version" class="font-mono" style="font-size:18px; font-weight:800; color:#a5b4fc;">v1.2.0</div>
+          </div>
+          <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-card); border-radius:var(--radius-md); padding:16px; text-align:center;">
+            <div style="font-size:11px; color:var(--text-muted);">AUC-ROC SCORE</div>
+            <div id="mh-auc" class="font-mono" style="font-size:18px; font-weight:800; color:var(--recovered-green);">94.2%</div>
+          </div>
+          <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-card); border-radius:var(--radius-md); padding:16px; text-align:center;">
+            <div style="font-size:11px; color:var(--text-muted);">ACCURACY</div>
+            <div id="mh-accuracy" class="font-mono" style="font-size:18px; font-weight:800; color:var(--cyan-agent);">89.5%</div>
+          </div>
+          <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-card); border-radius:var(--radius-md); padding:16px; text-align:center;">
+            <div style="font-size:11px; color:var(--text-muted);">BRIER SCORE</div>
+            <div id="mh-brier" class="font-mono" style="font-size:18px; font-weight:800; color:#cbd5e1;">0.078</div>
+          </div>
+        </div>
+
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px;">
+          <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-card); border-radius:var(--radius-md); padding:20px;">
+            <h4 style="font-size:14px; font-weight:700; margin-bottom:16px;">Top Feature Importances</h4>
+            <div id="feature-importance-list"></div>
+          </div>
+
+          <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-card); border-radius:var(--radius-md); padding:20px;">
+            <h4 style="font-size:14px; font-weight:700; margin-bottom:16px;">Score Probability Distribution</h4>
+            <div id="score-distribution-list"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 6: Simulator Playground -->
+    <div id="tab-simulator" class="tab-content">
+      <div class="section-panel">
+        <div class="panel-title-bar">
+          <div class="panel-title">🎮 Interactive Recovery Simulator Playground</div>
+          <button class="btn btn-success" onclick="runLiveBatchSimulation()">⚡ Run Full Live Batch (6 Scenarios)</button>
+        </div>
+        <p style="color:var(--text-secondary); font-size:13px; margin-bottom:20px;">
+          Simulate realistic payment failure events, invoke the autonomous recovery agent, and watch real-time recovery execution across the 4 core workflows.
+        </p>
+
+        <div class="sim-grid">
+          <!-- Scenario 1 -->
+          <div class="scenario-card">
+            <div class="scenario-info">
+              <h4>1. Card Decline → UPI Switch Bypass</h4>
+              <p>Simulates ₹4,999 card decline; Agent selects <code>SWITCH_TO_UPI</code></p>
+            </div>
+            <button class="btn btn-primary" onclick="runSimulationScenario('SWITCH_TO_UPI', 'CARD_DECLINED', 'CARD', 4999)">
+              Simulate ₹4,999
+            </button>
+          </div>
+
+          <!-- Scenario 2 -->
+          <div class="scenario-card">
+            <div class="scenario-info">
+              <h4>2. Gateway Timeout → Immediate Retry</h4>
+              <p>Simulates ₹1,250 network timeout; Agent retries same gateway</p>
+            </div>
+            <button class="btn btn-primary" onclick="runSimulationScenario('RETRY_SAME_METHOD', 'TIMEOUT', 'UPI', 1250)">
+              Simulate ₹1,250
+            </button>
+          </div>
+
+          <!-- Scenario 3 -->
+          <div class="scenario-card">
+            <div class="scenario-info">
+              <h4>3. 3DS Auth Timeout → WhatsApp Link</h4>
+              <p>Simulates ₹8,450 3DS failure; Agent creates tokenized payment link</p>
+            </div>
+            <button class="btn btn-primary" onclick="runSimulationScenario('CUSTOMER_NOTIFICATION', '3DS_FAILURE', 'CARD', 8450)">
+              Simulate ₹8,450
+            </button>
+          </div>
+
+          <!-- Scenario 4 -->
+          <div class="scenario-card">
+            <div class="scenario-info">
+              <h4>4. Bank Outage → Delayed Retry Backoff</h4>
+              <p>Simulates ₹3,200 server downtime; Schedules backoff retry pass</p>
+            </div>
+            <button class="btn btn-primary" onclick="runSimulationScenario('DELAYED_RETRY', 'BANK_SERVER_DOWN', 'UPI', 3200)">
+              Simulate ₹3,200
+            </button>
+          </div>
+
+          <!-- Scenario 5 -->
+          <div class="scenario-card">
+            <div class="scenario-info">
+              <h4>5. Fraud / Stolen Card → Terminal Block</h4>
+              <p>Simulates ₹19,999 fraud flag; Policy strictly stops recovery</p>
+            </div>
+            <button class="btn btn-secondary" onclick="runSimulationScenario('STOP_RECOVERY', 'FRAUD_REJECTED', 'CARD', 19999)">
+              Simulate Block
+            </button>
+          </div>
+
+          <!-- Scenario 6 -->
+          <div class="scenario-card">
+            <div class="scenario-info">
+              <h4>6. Unsupported Card → NetBanking Switch</h4>
+              <p>Simulates ₹6,200 unsupported instrument; Switches to NetBanking</p>
+            </div>
+            <button class="btn btn-primary" onclick="runSimulationScenario('SWITCH_TO_NETBANKING', 'CARD_TYPE_NOT_SUPPORTED', 'CARD', 6200)">
+              Simulate ₹6,200
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Transaction Detail Modal -->
+  <div id="txn-modal" class="modal-overlay">
+    <div class="modal-panel">
+      <div class="modal-header">
+        <div>
+          <h3 style="font-family:var(--font-display); font-size:18px; font-weight:700;">Transaction Diagnostics & Audit Trail</h3>
+          <div id="modal-txn-id" class="font-mono" style="font-size:12px; color:var(--text-muted);">--</div>
+        </div>
+        <button class="close-btn" onclick="closeTransactionModal()">✕</button>
+      </div>
+
+      <div id="modal-timeline-content"></div>
+    </div>
+  </div>
+
+  <script src="/static/dashboard.js"></script>
+</body>
+</html>
