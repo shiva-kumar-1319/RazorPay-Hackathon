@@ -43,7 +43,7 @@ async def lifespan(_: FastAPI):
         initialize_database()
     # Ensure orchestrator event subscriptions are initialized
     _ = recovery_orchestrator
-    logging.getLogger(__name__).info("Starting %s in %s (version 0.13.0)", settings.app_name, settings.app_env)
+    logging.getLogger(__name__).info("Starting %s in %s (version 1.0.0)", settings.app_name, settings.app_env)
     yield
     logging.getLogger(__name__).info("Stopping %s", settings.app_name)
 
@@ -51,8 +51,8 @@ async def lifespan(_: FastAPI):
 settings = get_settings()
 app = FastAPI(
     title=settings.app_name,
-    version="0.13.0",
-    description="Day 13 Evaluation + Business Proof — Baseline vs RecoverX benchmarks, financial ROI calculations, safety stopping rules verification, and immutable cryptographic audit trails.",
+    version="1.0.0",
+    description="RecoverX — Autonomous AI Revenue Recovery Platform for Modern Payment Gateways. Featuring Bounded ReAct Tool-Calling Agents, Calibrated Gradient Boosted Recovery ML, Net Expected Value Optimization, Distributed Idempotent Execution, and Cryptographic SHA-256 Audit Ledgers.",
     lifespan=lifespan,
 )
 
