@@ -16,6 +16,7 @@ from backend.app.api.agent import router as agent_router
 from backend.app.api.customers import router as customers_router
 from backend.app.api.dashboard import router as dashboard_router
 from backend.app.api.decision import router as decision_router
+from backend.app.api.evaluation import router as evaluation_router
 from backend.app.api.events import router as events_router
 from backend.app.api.execution import router as execution_router
 from backend.app.api.failures import router as failures_router
@@ -42,7 +43,7 @@ async def lifespan(_: FastAPI):
         initialize_database()
     # Ensure orchestrator event subscriptions are initialized
     _ = recovery_orchestrator
-    logging.getLogger(__name__).info("Starting %s in %s (version 0.12.0)", settings.app_name, settings.app_env)
+    logging.getLogger(__name__).info("Starting %s in %s (version 0.13.0)", settings.app_name, settings.app_env)
     yield
     logging.getLogger(__name__).info("Stopping %s", settings.app_name)
 
@@ -50,8 +51,8 @@ async def lifespan(_: FastAPI):
 settings = get_settings()
 app = FastAPI(
     title=settings.app_name,
-    version="0.12.0",
-    description="Day 12 Real-Time Recovery & Analytics Dashboard — Live failed payments, autonomous agent decisions, execution workflows, recovery rates, and recovered GMV metrics for RecoverX.",
+    version="0.13.0",
+    description="Day 13 Evaluation + Business Proof — Baseline vs RecoverX benchmarks, financial ROI calculations, safety stopping rules verification, and immutable cryptographic audit trails.",
     lifespan=lifespan,
 )
 
@@ -81,6 +82,7 @@ app.include_router(prediction_router)
 app.include_router(decision_router)
 app.include_router(agent_router)
 app.include_router(dashboard_router)
+app.include_router(evaluation_router)
 
 
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)

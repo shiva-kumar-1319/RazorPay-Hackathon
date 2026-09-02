@@ -16,10 +16,67 @@ from decimal import Decimal
 from typing import Any
 
 import numpy as np
-from sklearn.calibration import CalibratedClassifierCV
-from sklearn.ensemble import GradientBoostingClassifier
-from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, roc_auc_score
-from sklearn.model_selection import train_test_split
+
+try:
+    from sklearn.calibration import CalibratedClassifierCV
+    from sklearn.ensemble import GradientBoostingClassifier
+    from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, roc_auc_score
+    from sklearn.model_selection import train_test_split
+    SKLEARN_AVAILABLE = True
+except (ImportError, Exception):
+    SKLEARN_AVAILABLE = False
+
+    def train_test_split(X: np.ndarray, y: np.ndarray, test_size: float = 0.2, random_state: int = 42, stratify: np.ndarray | None = None):
+        rng = np.random.RandomState(random_state)
+        n = len(X)
+        if stratify is not None:
+            idx0 = np.where(stratify == 0)[0]
+            idx1 = np.where(stratify == 1)[0]
+            rng.shuffle(idx0)
+            rng.shuffle(idx1)
+            split0 = int(len(idx0) * (1 - test_size))
+            split1 = int(len(idx1) * (1 - test_size))
+            train_idx = np.concatenate([idx0[:split0], idx1[:split1]])
+            test_idx = np.concatenate([idx0[split0:], idx1[split1:]])
+            rng.shuffle(train_idx)
+            rng.shuffle(test_idx)
+            return X[train_idx], X[test_idx], y[train_idx], y[test_idx]
+        indices = np.arange(n)
+        rng.shuffle(indices)
+        split = int(n * (1 - test_size))
+        train_idx, test_idx = indices[:split], indices[split:]
+        return X[train_idx], X[test_idx], y[train_idx], y[test_idx]
+
+    def accuracy_score(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+        return float(np.mean(y_true == y_pred))
+
+    def precision_score(y_true: np.ndarray, y_pred: np.ndarray, zero_division: float = 0.0) -> float:
+        tp = np.sum((y_true == 1) & (y_pred == 1))
+        fp = np.sum((y_true == 0) & (y_pred == 1))
+        return float(tp / (tp + fp)) if (tp + fp) > 0 else zero_division
+
+    def recall_score(y_true: np.ndarray, y_pred: np.ndarray, zero_division: float = 0.0) -> float:
+        tp = np.sum((y_true == 1) & (y_pred == 1))
+        fn = np.sum((y_true == 1) & (y_pred == 0))
+        return float(tp / (tp + fn)) if (tp + fn) > 0 else zero_division
+
+    def f1_score(y_true: np.ndarray, y_pred: np.ndarray, zero_division: float = 0.0) -> float:
+        p = precision_score(y_true, y_pred, zero_division=0.0)
+        r = recall_score(y_true, y_pred, zero_division=0.0)
+        return float(2 * p * r / (p + r)) if (p + r) > 0 else zero_division
+
+    def roc_auc_score(y_true: np.ndarray, y_score: np.ndarray) -> float:
+        # Calculate Mann-Whitney U based ROC-AUC
+        y_true = np.asarray(y_true)
+        y_score = np.asarray(y_score)
+        n_pos = np.sum(y_true == 1)
+        n_neg = np.sum(y_true == 0)
+        if n_pos == 0 or n_neg == 0:
+            return 0.5
+        ranks = np.argsort(np.argsort(y_score)) + 1
+        pos_rank_sum = np.sum(ranks[y_true == 1])
+        u_val = pos_rank_sum - (n_pos * (n_pos + 1)) / 2.0
+        return float(u_val / (n_pos * n_neg))
 
 from backend.app.models.recovery import ActionType, CustomerIntelligence
 
@@ -325,6 +382,88 @@ def generate_synthetic_training_data(
 # ============================================================================
 
 
+class _PureNumpyGBM:
+    """Pure NumPy calibrated logistic model fallback with category-action interaction terms."""
+    def __init__(self, lr: float = 0.05, n_iter: int = 400, reg: float = 0.0005):
+        self.lr = lr
+        self.n_iter = n_iter
+        self.reg = reg
+        self.w: np.ndarray | None = None
+        self.b: float = 0.0
+        self.mean: np.ndarray | None = None
+        self.std: np.ndarray | None = None
+        self.feature_importances_: np.ndarray | None = None
+
+    def _expand(self, X: np.ndarray) -> np.ndarray:
+        cat = X[:, 11:15]
+        act = X[:, 15:23]
+        cross = np.einsum("ni,nj->nij", cat, act).reshape(len(X), 32)
+        return np.hstack([X, cross])
+
+    def fit(self, X: np.ndarray, y: np.ndarray):
+        X_exp = self._expand(X)
+        n_samples, n_features = X_exp.shape
+        self.mean = np.mean(X_exp, axis=0)
+        self.std = np.std(X_exp, axis=0)
+        self.std[self.std == 0] = 1.0
+        X_scaled = (X_exp - self.mean) / self.std
+
+        self.w = np.zeros(n_features)
+        self.b = 0.0
+        mW, vW = np.zeros_like(self.w), np.zeros_like(self.w)
+        mb, vb = 0.0, 0.0
+        beta1, beta2, eps = 0.9, 0.999, 1e-8
+
+        for t in range(1, self.n_iter + 1):
+            logits = np.dot(X_scaled, self.w) + self.b
+            logits = np.clip(logits, -20, 20)
+            preds = 1.0 / (1.0 + np.exp(-logits))
+            error = preds - y
+
+            dw = (np.dot(X_scaled.T, error) / n_samples) + self.reg * self.w
+            db = float(np.mean(error))
+
+            mW = beta1 * mW + (1 - beta1) * dw
+            vW = beta2 * vW + (1 - beta2) * (dw ** 2)
+            w_hat = mW / (1 - beta1 ** t)
+            v_hat = vW / (1 - beta2 ** t)
+            self.w -= self.lr * w_hat / (np.sqrt(v_hat) + eps)
+
+            mb = beta1 * mb + (1 - beta1) * db
+            vb = beta2 * vb + (1 - beta2) * (db ** 2)
+            b_hat = mb / (1 - beta1 ** t)
+            v_b_hat = vb / (1 - beta2 ** t)
+            self.b -= self.lr * b_hat / (np.sqrt(v_b_hat) + eps)
+
+        # Compute importance across original 26 features
+        raw_w = np.abs(self.w[:26])
+        cross_w = np.sum(np.abs(self.w[26:]).reshape(4, 8), axis=1) # across actions
+        cross_act_w = np.sum(np.abs(self.w[26:]).reshape(4, 8), axis=0) # across cats
+        combined_w = raw_w.copy()
+        combined_w[11:15] += cross_w * 0.5
+        combined_w[15:23] += cross_act_w * 0.5
+        total_w = float(np.sum(combined_w))
+        self.feature_importances_ = combined_w / total_w if total_w > 0 else np.ones(26) / 26
+        return self
+
+    def predict_proba(self, X: np.ndarray) -> np.ndarray:
+        if self.mean is None or self.std is None or self.w is None:
+            raise RuntimeError("Model is not fitted.")
+        if X.ndim == 1:
+            X = X.reshape(1, -1)
+        X_exp = self._expand(X)
+        X_scaled = (X_exp - self.mean) / self.std
+        logits = np.dot(X_scaled, self.w) + self.b
+        logits = np.clip(logits, -20, 20)
+        p1 = 1.0 / (1.0 + np.exp(-logits))
+        p0 = 1.0 - p1
+        return np.column_stack([p0, p1])
+
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        probas = self.predict_proba(X)
+        return (probas[:, 1] >= 0.5).astype(int)
+
+
 class RecoveryPredictionModel:
     """GradientBoosting classifier predicting P(successful recovery) per action.
 
@@ -333,8 +472,8 @@ class RecoveryPredictionModel:
     """
 
     def __init__(self) -> None:
-        self._model: CalibratedClassifierCV | None = None
-        self._raw_model: GradientBoostingClassifier | None = None
+        self._model: Any = None
+        self._raw_model: Any = None
         self._metrics: dict[str, float] = {}
         self._is_trained = False
         self._extractor = RecoveryFeatureExtractor()
@@ -351,26 +490,32 @@ class RecoveryPredictionModel:
         X, y = generate_synthetic_training_data(n_samples=n_samples, seed=seed)
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=seed, stratify=y)
 
-        base_clf = GradientBoostingClassifier(
-            n_estimators=200,
-            learning_rate=0.1,
-            max_depth=4,
-            min_samples_split=10,
-            min_samples_leaf=5,
-            subsample=0.8,
-            random_state=seed,
-        )
-        base_clf.fit(X_train, y_train)
-        self._raw_model = base_clf
+        if SKLEARN_AVAILABLE:
+            base_clf = GradientBoostingClassifier(
+                n_estimators=200,
+                learning_rate=0.1,
+                max_depth=4,
+                min_samples_split=10,
+                min_samples_leaf=5,
+                subsample=0.8,
+                random_state=seed,
+            )
+            base_clf.fit(X_train, y_train)
+            self._raw_model = base_clf
 
-        # Calibrate probabilities with isotonic regression
-        cal_clf = CalibratedClassifierCV(base_clf, cv=3, method="isotonic")
-        cal_clf.fit(X_train, y_train)
-        self._model = cal_clf
+            # Calibrate probabilities with isotonic regression
+            cal_clf = CalibratedClassifierCV(base_clf, cv=3, method="isotonic")
+            cal_clf.fit(X_train, y_train)
+            self._model = cal_clf
+        else:
+            numpy_clf = _PureNumpyGBM(lr=0.1, n_iter=600, reg=0.001)
+            numpy_clf.fit(X_train, y_train)
+            self._raw_model = numpy_clf
+            self._model = numpy_clf
 
         # Evaluate on held-out test set
-        y_pred = cal_clf.predict(X_test)
-        y_proba = cal_clf.predict_proba(X_test)[:, 1]
+        y_pred = self._model.predict(X_test)
+        y_proba = self._model.predict_proba(X_test)[:, 1]
 
         self._metrics = {
             "accuracy": round(float(accuracy_score(y_test, y_pred)), 4),

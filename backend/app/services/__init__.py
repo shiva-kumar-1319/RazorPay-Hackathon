@@ -62,11 +62,16 @@ from backend.app.services.recovery_execution import (
     RecoveryExecutionEngine,
     recovery_execution_engine,
 )
+from backend.app.services.evaluation_service import (
+    EvaluationService,
+    evaluation_service,
+)
 
 __all__ = [
     "ACTION_COST_MODEL",
     "AgentToolRegistry",
     "CUSTOMER_ACTION_CODES",
+    "EvaluationService",
     "EventBus",
     "FailureIntelligenceService",
     "GATEWAY_CODE_MAPPINGS",
@@ -88,6 +93,7 @@ __all__ = [
     "compute_customer_intelligence",
     "create_customer",
     "evaluate_failure_policy",
+    "evaluation_service",
     "extract_customer_features",
     "failure_intelligence_service",
     "get_customer_detail",

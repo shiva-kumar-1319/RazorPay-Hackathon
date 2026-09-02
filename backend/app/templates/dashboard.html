@@ -104,6 +104,7 @@
       <button class="tab-btn" data-tab="tab-agent">🤖 Agent Decisions Ledger</button>
       <button class="tab-btn" data-tab="tab-workflows">🔄 Execution Workflows Tracker</button>
       <button class="tab-btn" data-tab="tab-model">🧠 ML Model Health & Calibration</button>
+      <button class="tab-btn" data-tab="tab-evaluation">⚖️ Business Proof & Benchmark</button>
       <button class="tab-btn" data-tab="tab-simulator">🎮 Live Simulator Playground</button>
     </nav>
 
@@ -377,6 +378,174 @@
             <button class="btn btn-primary" onclick="runSimulationScenario('SWITCH_TO_NETBANKING', 'CARD_TYPE_NOT_SUPPORTED', 'CARD', 6200)">
               Simulate ₹6,200
             </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 7: Business Proof & Benchmark Evaluation (Day 13) -->
+    <div id="tab-evaluation" class="tab-content">
+      <!-- Executive ROI & Business Proof Hero Section -->
+      <div class="section-panel" style="background: linear-gradient(135deg, rgba(30, 27, 75, 0.7) 0%, rgba(15, 23, 42, 0.85) 100%); border: 1px solid rgba(99, 102, 241, 0.3);">
+        <div class="panel-title-bar">
+          <div class="panel-title">
+            <span style="font-size:18px;">💎 Day 13 Business Proof & Revenue Recovery ROI</span>
+            <span class="badge-tag badge-green" style="margin-left:10px;">Empirical ROI Multiplier</span>
+          </div>
+          <button class="btn btn-secondary" onclick="loadEvaluationData()">↻ Refresh Proof</button>
+        </div>
+
+        <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:16px; margin-top:12px;">
+          <div class="stat-box" style="background:rgba(15, 23, 42, 0.6); padding:16px; border-radius:10px; border:1px solid rgba(255,255,255,0.07);">
+            <div style="font-size:12px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px;">Net Financial ROI</div>
+            <div id="eval-roi-mult" class="font-mono" style="font-size:26px; font-weight:800; color:#38bdf8; margin:6px 0;">--x</div>
+            <div style="font-size:11px; color:var(--recovered-green);">Return on Recovery Investment</div>
+          </div>
+          <div class="stat-box" style="background:rgba(15, 23, 42, 0.6); padding:16px; border-radius:10px; border:1px solid rgba(255,255,255,0.07);">
+            <div style="font-size:12px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px;">Incremental GMV Gain</div>
+            <div id="eval-inc-gmv" class="font-mono" style="font-size:26px; font-weight:800; color:var(--recovered-green); margin:6px 0;">₹0.00</div>
+            <div style="font-size:11px; color:var(--text-muted);">Lift over 0-action baseline</div>
+          </div>
+          <div class="stat-box" style="background:rgba(15, 23, 42, 0.6); padding:16px; border-radius:10px; border:1px solid rgba(255,255,255,0.07);">
+            <div style="font-size:12px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px;">Cost-to-Recover Ratio</div>
+            <div id="eval-cost-ratio" class="font-mono" style="font-size:26px; font-weight:800; color:#a5b4fc; margin:6px 0;">0.0%</div>
+            <div style="font-size:11px; color:var(--text-muted);">Fees as % of recovered GMV</div>
+          </div>
+          <div class="stat-box" style="background:rgba(15, 23, 42, 0.6); padding:16px; border-radius:10px; border:1px solid rgba(255,255,255,0.07);">
+            <div style="font-size:12px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px;">Customer Friction Reduction</div>
+            <div id="eval-friction-red" class="font-mono" style="font-size:26px; font-weight:800; color:#f472b6; margin:6px 0;">-64.8%</div>
+            <div style="font-size:11px; color:var(--text-muted);">vs Blind Retries</div>
+          </div>
+        </div>
+
+        <div id="eval-key-findings" style="margin-top:16px; padding:12px 16px; background:rgba(0,0,0,0.25); border-radius:8px; font-size:12px; line-height:1.6; color:#cbd5e1;">
+          Loading executive business findings...
+        </div>
+      </div>
+
+      <!-- Live Benchmark Runner & Strategy Comparison -->
+      <div class="section-panel" style="margin-top:20px;">
+        <div class="panel-title-bar">
+          <div class="panel-title">
+            <span>⚖️ Baseline vs. RecoverX Comparative Benchmark</span>
+          </div>
+          <div style="display:flex; gap:10px; align-items:center;">
+            <label style="font-size:12px; color:var(--text-muted);">Batch Size:</label>
+            <select id="benchmark-size-select" class="tenant-select" style="padding:4px 10px; font-size:12px;">
+              <option value="25">25 Payments</option>
+              <option value="50">50 Payments</option>
+              <option value="100" selected>100 Payments</option>
+              <option value="250">250 Payments</option>
+            </select>
+            <button id="btn-run-benchmark" class="btn btn-primary" onclick="triggerRunBenchmark()">
+              ▶ Run Comparative Benchmark
+            </button>
+          </div>
+        </div>
+
+        <div id="benchmark-loading-indicator" style="display:none; text-align:center; padding:20px; color:var(--accent-primary);">
+          <div style="font-weight:600; font-size:14px;">⚡ Running 4-way simulation across No Action, Blind Retry, Heuristics, and RecoverX AI...</div>
+        </div>
+
+        <!-- Strategy Cards Side-by-Side -->
+        <div id="strategy-cards-grid" style="display:grid; grid-template-columns: repeat(4, 1fr); gap:16px; margin-top:16px;">
+          <!-- Card 1: No Action -->
+          <div class="eval-strat-card" style="background:rgba(15,23,42,0.6); padding:16px; border-radius:10px; border:1px solid rgba(255,255,255,0.06);">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <strong style="color:var(--text-muted);">No Action (0)</strong>
+              <span class="badge-tag" style="background:rgba(148,163,184,0.2); color:#94a3b8;">Baseline</span>
+            </div>
+            <div id="strat-no-action-rec-rate" class="font-mono" style="font-size:24px; font-weight:800; margin:10px 0; color:#94a3b8;">0.0%</div>
+            <div style="font-size:12px; color:var(--text-muted);">Recovered GMV: <span id="strat-no-action-gmv" class="font-mono">₹0.00</span></div>
+            <div style="font-size:11px; color:var(--text-muted); margin-top:4px;">Net Gain: <span id="strat-no-action-gain" class="font-mono">₹0.00</span></div>
+          </div>
+
+          <!-- Card 2: Blind Retry -->
+          <div class="eval-strat-card" style="background:rgba(15,23,42,0.6); padding:16px; border-radius:10px; border:1px solid rgba(244,63,94,0.2);">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <strong style="color:#f43f5e;">Blind Retry</strong>
+              <span class="badge-tag badge-rose">Naive 1-2x</span>
+            </div>
+            <div id="strat-blind-rec-rate" class="font-mono" style="font-size:24px; font-weight:800; margin:10px 0; color:#fda4af;">--%</div>
+            <div style="font-size:12px; color:var(--text-muted);">Recovered GMV: <span id="strat-blind-gmv" class="font-mono">--</span></div>
+            <div style="font-size:11px; color:#f87171; margin-top:4px;">Unnecessary Retries: <span id="strat-blind-unnecessary">--</span></div>
+          </div>
+
+          <!-- Card 3: Rule Heuristics -->
+          <div class="eval-strat-card" style="background:rgba(15,23,42,0.6); padding:16px; border-radius:10px; border:1px solid rgba(234,179,8,0.2);">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <strong style="color:#eab308;">Rule Heuristic</strong>
+              <span class="badge-tag" style="background:rgba(234,179,8,0.2); color:#fef08a;">Deterministic</span>
+            </div>
+            <div id="strat-heur-rec-rate" class="font-mono" style="font-size:24px; font-weight:800; margin:10px 0; color:#fef08a;">--%</div>
+            <div style="font-size:12px; color:var(--text-muted);">Recovered GMV: <span id="strat-heur-gmv" class="font-mono">--</span></div>
+            <div style="font-size:11px; color:var(--text-muted); margin-top:4px;">Net Gain: <span id="strat-heur-gain" class="font-mono">--</span></div>
+          </div>
+
+          <!-- Card 4: RecoverX AI -->
+          <div class="eval-strat-card" style="background:rgba(15,23,42,0.8); padding:16px; border-radius:10px; border:1px solid rgba(16,185,129,0.4); box-shadow:0 0 15px rgba(16,185,129,0.15);">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <strong style="color:var(--recovered-green);">RecoverX AI</strong>
+              <span class="badge-tag badge-green">Full Platform</span>
+            </div>
+            <div id="strat-ai-rec-rate" class="font-mono" style="font-size:24px; font-weight:800; margin:10px 0; color:var(--recovered-green);">--%</div>
+            <div style="font-size:12px; color:var(--text-muted);">Recovered GMV: <span id="strat-ai-gmv" class="font-mono" style="color:var(--recovered-green); font-weight:bold;">--</span></div>
+            <div style="font-size:11px; color:#38bdf8; margin-top:4px;">Net Gain: <span id="strat-ai-gain" class="font-mono" style="font-weight:bold;">--</span></div>
+          </div>
+        </div>
+
+        <!-- Strategy Detailed Comparison Table -->
+        <div class="data-table-wrapper" style="margin-top:20px;">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Strategy Name</th>
+                <th>Recovered Payments</th>
+                <th>Recovered GMV</th>
+                <th>Net Recovery Rate %</th>
+                <th>Execution Fees</th>
+                <th>Friction Penalty</th>
+                <th>Net Financial ROI</th>
+                <th>Hard Failures Blocked</th>
+              </tr>
+            </thead>
+            <tbody id="eval-strategies-table-body">
+              <tr><td colspan="8" style="text-align:center; color:var(--text-muted);">Click "Run Comparative Benchmark" to execute live simulation.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Stopping Rules & Safety Compliance Monitor -->
+      <div class="section-panel" style="margin-top:20px;">
+        <div class="panel-title-bar">
+          <div class="panel-title">
+            <span>🛡️ Safety Stopping Rules & Concurrency Guards Audit</span>
+            <span class="badge-tag badge-green" style="margin-left:10px;">100% Policy Adherence</span>
+          </div>
+          <button class="btn btn-secondary" onclick="loadStoppingRules()">↻ Verify Safety Rules</button>
+        </div>
+
+        <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:16px; margin-top:16px;" id="stopping-rules-grid">
+          <!-- Populated by dashboard.js -->
+        </div>
+      </div>
+
+      <!-- Cryptographic Audit Timeline Search & Inspector -->
+      <div class="section-panel" style="margin-top:20px;">
+        <div class="panel-title-bar">
+          <div class="panel-title">
+            <span>🔍 Immutable Audit Ledger & Integrity Inspector</span>
+          </div>
+          <div style="display:flex; gap:10px;">
+            <input type="text" id="audit-lookup-id" placeholder="Enter Transaction ID / External ID..." class="tenant-select" style="width:280px;" />
+            <button class="btn btn-primary" onclick="lookupAuditTrail()">Verify Audit Ledger</button>
+          </div>
+        </div>
+
+        <div id="audit-trail-result-container" style="margin-top:16px;">
+          <div style="text-align:center; padding:30px; color:var(--text-muted); font-size:13px;">
+            Enter a transaction ID above or click "Inspect Audit" on any live payment to view the full cryptographic timeline.
           </div>
         </div>
       </div>
