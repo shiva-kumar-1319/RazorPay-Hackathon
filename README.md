@@ -9,7 +9,7 @@
 ![Python](https://img.shields.io/badge/Python-3.12-blue?style=flat-square&logo=python)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?style=flat-square&logo=fastapi)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-336791?style=flat-square&logo=postgresql)
-![Tests](https://img.shields.io/badge/Tests-183%20passed-success?style=flat-square)
+![Tests](https://img.shields.io/badge/Tests-200%20passed-success?style=flat-square)
 ![Audit](https://img.shields.io/badge/Evaluator%20Audit-20%2F20-success?style=flat-square)
 
 </div>
@@ -188,11 +188,41 @@ flowchart TD
 
 ### Gemini Integration (Explanation Layer Only)
 
-> **Core Guarantee**: Gemini is used exclusively for multi-stakeholder explanation generation at Step 6; the recovery decision itself is 100% deterministic ML + EV.
+> **Gemini is the explanation layer, not the financial decision authority.**
 
-- **Zero LLM in Financial Decision Path**: Action selection, policy enforcement, Net EV maximization, and execution guards execute with 0 generative tokens.
+The core financial execution path is 100% deterministic and free of generative LLMs:
+
+```text
+Payment Failure
+      ↓
+Failure Intelligence
+      ↓
+Customer Intelligence
+      ↓
+ML Prediction
+      ↓
+Net Expected Value
+      ↓
+Policy Gate
+      ↓
+Bounded Execution
+      ↓
+Audit Chain
+```
+
+Gemini operates strictly downstream on completed decisions:
+
+```text
+Completed Decision
+      ↓
+Gemini Explanation
+      ↓
+Merchant / Customer Narrative
+```
+
+- **Zero LLM in Financial Decision Path**: Action selection, policy enforcement, Net EV maximization, and execution authorization execute with 0 generative tokens.
 - **Post-Decision Narrative Synthesis**: When `USE_LLM_EXPLANATIONS=true` and `GEMINI_API_KEY` is set, Gemini synthesizes clear executive summaries for the merchant dashboard and friendly SMS/WhatsApp notifications for the customer.
-- **Strict 3.0s Timeout & Deterministic Fallback**: Any network delay, timeout, or missing key instantly falls back to deterministic templates without impacting transaction flow.
+- **Strict SLA Timeout & Deterministic Fallback**: Any network delay, timeout (default 5.0s), or missing key instantly falls back to deterministic templates without impacting transaction flow.
 - **Cryptographic Audit Provenance**: The SHA-256 audit ledger explicitly tags `explanation_source: "llm"` vs `"template"`.
 
 ---
@@ -352,7 +382,7 @@ python scripts/evaluator_check.py
 pytest tests/ -q
 
 # Expected output:
-# 180 passed, 3 warnings in 19.10s
+# 200 passed, 1 skipped, 3 warnings in 22.10s
 ```
 
 ---
