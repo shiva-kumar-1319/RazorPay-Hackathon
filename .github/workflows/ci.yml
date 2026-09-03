@@ -1,0 +1,46 @@
+name: RecoverX Continuous Integration & Verification
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  test:
+    name: Lint, Test, & Invariants Verification
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio anyio httpx
+
+      - name: Syntax & Compilation Validation
+        run: |
+          python -m compileall backend benchmark scripts tests
+
+      - name: Run Pytest Suite
+        env:
+          APP_ENV: test
+        run: |
+          pytest --verbose
+
+      - name: Run Benchmark Smoke Test (Seed 42)
+        run: |
+          python -m benchmark.run_benchmark --seed 42 --transactions 250 --output benchmark/results/ci_benchmark.json
+
+      - name: Run Automated Evaluator Audit Check
+        run: |
+          python scripts/evaluator_check.py

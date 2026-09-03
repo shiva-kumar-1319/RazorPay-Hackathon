@@ -180,6 +180,14 @@ class RecoveryDecisionEngine:
         candidate_action_types: list[ActionType],
         customer_intel: CustomerIntelligence | None = None,
         hour_of_day: int = 12,
+        customer_context: RecoveryContext | None = None,
+        customer_success_rate: float | None = None,
+        customer_recovery_rate: float | None = None,
+        customer_risk_score: float | None = None,
+        customer_failure_streak: int | None = None,
+        customer_avg_txn_value: float | None = None,
+        customer_total_txns: int | None = None,
+        behavioral_segment: str | None = None,
     ) -> list[ScoredAction]:
         """Score every candidate action using ML prediction + EV calculation.
 
@@ -189,13 +197,30 @@ class RecoveryDecisionEngine:
 
         for action_type in candidate_action_types:
             # Build prediction context
-            ctx = RecoveryFeatureExtractor.from_recovery_data(
-                amount=Decimal(str(amount)),
-                failure_category=failure_category,
-                action_type=action_type,
-                customer_intel=customer_intel,
-                hour_of_day=hour_of_day,
-            )
+            if customer_context:
+                ctx = customer_context
+            elif customer_intel:
+                ctx = RecoveryFeatureExtractor.from_recovery_data(
+                    amount=Decimal(str(amount)),
+                    failure_category=failure_category,
+                    action_type=action_type,
+                    customer_intel=customer_intel,
+                    hour_of_day=hour_of_day,
+                )
+            else:
+                ctx = RecoveryContext(
+                    amount=float(amount),
+                    failure_category=failure_category,
+                    action_type=action_type,
+                    hour_of_day=hour_of_day,
+                    customer_success_rate=customer_success_rate if customer_success_rate is not None else 0.5,
+                    customer_recovery_rate=customer_recovery_rate if customer_recovery_rate is not None else 0.3,
+                    customer_risk_score=customer_risk_score if customer_risk_score is not None else 0.1,
+                    customer_failure_streak=customer_failure_streak if customer_failure_streak is not None else 0,
+                    customer_avg_txn_value=customer_avg_txn_value if customer_avg_txn_value is not None else 1000.0,
+                    customer_total_txns=customer_total_txns if customer_total_txns is not None else 5,
+                    behavioral_segment=behavioral_segment or "STANDARD",
+                )
 
             # Get ML prediction
             if recovery_prediction_model.is_trained:
@@ -203,6 +228,7 @@ class RecoveryDecisionEngine:
             else:
                 # Fallback: use heuristic base rate
                 probability = 0.5
+
 
             # Compute expected value
             cost_config = ACTION_COST_MODEL[action_type]

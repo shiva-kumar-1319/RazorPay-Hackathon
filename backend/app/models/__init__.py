@@ -5,14 +5,15 @@ from backend.app.models.recovery import (
     AuditLog,
     Customer,
     CustomerIntelligence,
+    CustomerRecoverySession,
     FailureEvent,
+    IdempotencyRecord,
     OutboxEvent,
     PaymentAttempt,
     ProcessedEvent,
     QuarantineEvent,
     RecoveryAction,
     RecoveryCase,
-    CustomerRecoverySession,
     Transaction,
 )
 
@@ -23,6 +24,7 @@ __all__ = [
     "CustomerIntelligence",
     "CustomerRecoverySession",
     "FailureEvent",
+    "IdempotencyRecord",
     "OutboxEvent",
     "PaymentAttempt",
     "ProcessedEvent",
@@ -31,4 +33,5 @@ __all__ = [
     "RecoveryCase",
     "Transaction",
 ]
+
 

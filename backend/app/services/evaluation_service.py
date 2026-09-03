@@ -51,116 +51,28 @@ from backend.app.services.prediction_model import (
     RecoveryContext,
     recovery_prediction_model,
 )
+from benchmark.scenarios import generate_scenarios
+from benchmark.simulator import PaymentEnvironmentSimulator
+from benchmark.baselines import (
+    BlindImmediateRetry,
+    NoActionBaseline,
+    RecoverXAgent,
+    RuleHeuristicBaseline,
+)
 
 logger = logging.getLogger("recoverx.evaluation_service")
 
 
 def _compute_event_hash(step_number: int, timestamp: str, stage: str, actor: str, action: str, details: dict[str, Any]) -> str:
-    """Generate SHA-256 checksum for immutable audit timeline verification."""
+    """Generate full SHA-256 checksum for immutable audit timeline verification."""
     raw = f"{step_number}|{timestamp}|{stage}|{actor}|{action}|{json.dumps(details, sort_keys=True, default=str)}"
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
 class EvaluationService:
     """Service providing business proof evaluation, comparative benchmarking,
-
     stopping rules compliance auditing, and tamper-evident audit trails.
     """
-
-    # Scenario definitions for realistic synthetic / replay benchmarking
-    SCENARIO_TEMPLATES = [
-        {
-            "code": "CARD_DECLINED",
-            "category": "PAYMENT_METHOD",
-            "method": "CARD",
-            "gateway": "RAZORPAY",
-            "amount_range": (2000, 9500),
-            "recoverable": True,
-            "error_message": "Card issuer declined transaction: Do not honor / Insufficient balance",
-            "optimal_action": ActionType.SWITCH_TO_UPI,
-            "blind_success_p": 0.08,
-            "heuristic_success_p": 0.55,
-            "recoverx_success_p": 0.84,
-        },
-        {
-            "code": "INSUFFICIENT_FUNDS",
-            "category": "PAYMENT_METHOD",
-            "method": "CARD",
-            "gateway": "STRIPE",
-            "amount_range": (1500, 6000),
-            "recoverable": True,
-            "error_message": "Insufficient funds in customer card account",
-            "optimal_action": ActionType.PAYMENT_LINK,
-            "blind_success_p": 0.05,
-            "heuristic_success_p": 0.50,
-            "recoverx_success_p": 0.78,
-        },
-        {
-            "code": "GATEWAY_TIMEOUT",
-            "category": "TEMPORARY",
-            "method": "UPI",
-            "gateway": "NPCI_UPI",
-            "amount_range": (500, 12000),
-            "recoverable": True,
-            "error_message": "UPI switch connection timeout: NPCI response delayed",
-            "optimal_action": ActionType.DELAYED_RETRY,
-            "blind_success_p": 0.42,
-            "heuristic_success_p": 0.58,
-            "recoverx_success_p": 0.82,
-        },
-        {
-            "code": "BANK_UNAVAILABLE",
-            "category": "TEMPORARY",
-            "method": "NETBANKING",
-            "gateway": "RAZORPAY",
-            "amount_range": (3000, 25000),
-            "recoverable": True,
-            "error_message": "Issuer bank CBS core banking system unavailable",
-            "optimal_action": ActionType.DELAYED_RETRY,
-            "blind_success_p": 0.20,
-            "heuristic_success_p": 0.52,
-            "recoverx_success_p": 0.76,
-        },
-        {
-            "code": "OTP_EXPIRED",
-            "category": "CUSTOMER_ACTION",
-            "method": "CARD",
-            "gateway": "RAZORPAY",
-            "amount_range": (1000, 18000),
-            "recoverable": True,
-            "error_message": "Customer 3DS OTP expired or dropped during authentication",
-            "optimal_action": ActionType.CUSTOMER_NOTIFICATION,
-            "blind_success_p": 0.12,
-            "heuristic_success_p": 0.50,
-            "recoverx_success_p": 0.74,
-        },
-        {
-            "code": "FRAUD_SUSPECTED",
-            "category": "HARD_FAILURE",
-            "method": "CARD",
-            "gateway": "STRIPE",
-            "amount_range": (5000, 50000),
-            "recoverable": False,
-            "error_message": "Transaction blocked by bank risk engine: Stolen/Lost card",
-            "optimal_action": ActionType.STOP_RECOVERY,
-            "blind_success_p": 0.0,
-            "heuristic_success_p": 0.0,
-            "recoverx_success_p": 0.0,
-        },
-        {
-            "code": "INVALID_ACCOUNT",
-            "category": "HARD_FAILURE",
-            "method": "NETBANKING",
-            "gateway": "ISO8583",
-            "amount_range": (2000, 20000),
-            "recoverable": False,
-            "error_message": "Account does not exist or has been frozen",
-            "optimal_action": ActionType.STOP_RECOVERY,
-            "blind_success_p": 0.0,
-            "heuristic_success_p": 0.0,
-            "recoverx_success_p": 0.0,
-        },
-    ]
 
     def run_benchmark(
         self,
@@ -177,265 +89,105 @@ class EvaluationService:
         3. RULE_BASED_HEURISTIC (Deterministic rule-based routing)
         4. RECOVERX_AI (Full AI: Failure Intel + ML Model + Net EV + Smart Switching + Stopping Rules)
         """
-        rng = random.Random(seed)
         benchmark_id = f"bench_{uuid.uuid4().hex[:12]}"
         now = datetime.now(timezone.utc)
 
-        # Filter template scenarios if specific ones requested
-        templates = self.SCENARIO_TEMPLATES
-        if scenarios:
-            filtered = [t for t in self.SCENARIO_TEMPLATES if t["code"] in scenarios]
-            if filtered:
-                templates = filtered
+        # 1. Generate realistic benchmark scenarios with hidden ground truth
+        scenarios_list = generate_scenarios(count=num_transactions, seed=seed)
+        simulator = PaymentEnvironmentSimulator(seed=seed)
 
-        # Generate synthetic batch
-        total_failed_gmv = Decimal("0.00")
-        sample_records: list[dict[str, Any]] = []
+        strat_no_action = NoActionBaseline()
+        strat_blind = BlindImmediateRetry()
+        strat_heur = RuleHeuristicBaseline()
+        strat_rx = RecoverXAgent()
 
-        for i in range(num_transactions):
-            tpl = rng.choice(templates)
-            amt_val = round(rng.uniform(tpl["amount_range"][0], tpl["amount_range"][1]), 2)
-            amt = Decimal(str(amt_val))
-            total_failed_gmv += amt
+        total_failed_gmv = Decimal(str(round(sum(s.observable.amount for s in scenarios_list), 2)))
+        recoverable_txns_count = sum(1 for s in scenarios_list if not s.hidden_truth.is_terminal_fraud_or_hotlisted)
 
-            sample_records.append({
-                "index": i,
-                "template": tpl,
-                "amount": amt,
-                "category": tpl["category"],
-                "code": tpl["code"],
-                "recoverable": tpl["recoverable"],
-                "customer_success_rate": round(rng.uniform(0.3, 0.95), 2),
-                "customer_risk_score": round(rng.uniform(0.01, 0.4), 2) if tpl["category"] != "HARD_FAILURE" else 0.95,
-            })
+        # 2. Simulate outcomes across all 4 strategies
+        res_no_action = [simulator.evaluate_action(s, strat_no_action.select_action(s.observable)) for s in scenarios_list]
+        res_blind = [simulator.evaluate_action(s, strat_blind.select_action(s.observable)) for s in scenarios_list]
+        res_heur = [simulator.evaluate_action(s, strat_heur.select_action(s.observable)) for s in scenarios_list]
+        res_rx = [simulator.evaluate_action(s, strat_rx.select_action(s.observable)) for s in scenarios_list]
 
-        # Calculate metrics for each strategy
-        # --- 1. NO ACTION ---
-        no_action_metrics = StrategyMetrics(
-            strategy=BenchmarkStrategy.NO_ACTION,
-            strategy_name="No Action (Baseline 0)",
-            description="Naive baseline with zero automated recovery workflows. 100% of failed payments remain unrecovered.",
-            total_failed_txns=num_transactions,
-            total_failed_gmv=total_failed_gmv,
-            recovered_txns=0,
-            recovered_gmv=Decimal("0.00"),
-            net_recovery_rate_pct=0.0,
-            gross_recovery_rate_pct=0.0,
-            execution_cost=Decimal("0.00"),
-            friction_penalty=Decimal("0.00"),
-            net_financial_gain=Decimal("0.00"),
-            roi_multiplier=0.0,
-            hard_failures_blocked=0,
-            unnecessary_retries=0,
-            avg_turnaround_seconds=0.0,
-        )
+        def _build_metrics(name: str, strategy: BenchmarkStrategy, descr: str, res_list: list[Any], avg_turnaround: float) -> StrategyMetrics:
+            rec_cnt = sum(1 for r in res_list if r.recovered)
+            rec_gmv = Decimal(str(round(sum(r.recovered_amount for r in res_list), 2)))
+            cost = Decimal(str(round(sum(r.execution_cost for r in res_list), 2)))
+            friction = Decimal(str(round(sum(r.friction_cost for r in res_list), 2)))
+            net_gain = Decimal(str(round(sum(r.net_revenue_recovered for r in res_list), 2)))
+            gross_rate = round((rec_cnt / num_transactions) * 100, 2)
+            net_rate = round((rec_cnt / max(1, recoverable_txns_count)) * 100, 2)
+            violations = sum(1 for r in res_list if r.hard_stop_violation)
+            hard_blocked = sum(1 for r, s in zip(res_list, scenarios_list) if r.action_type == "STOP_RECOVERY" and s.hidden_truth.is_terminal_fraud_or_hotlisted)
+            roi = float(net_gain / max(Decimal("1.00"), cost)) if cost > 0 else 0.0
 
-        # --- 2. BLIND RETRY ---
-        blind_rec_txns = 0
-        blind_rec_gmv = Decimal("0.00")
-        blind_cost = Decimal("0.00")
-        blind_friction = Decimal("0.00")
-        blind_unnecessary_retries = 0
+            return StrategyMetrics(
+                strategy=strategy,
+                strategy_name=name,
+                description=descr,
+                total_failed_txns=num_transactions,
+                total_failed_gmv=total_failed_gmv,
+                recovered_txns=rec_cnt,
+                recovered_gmv=rec_gmv,
+                net_recovery_rate_pct=net_rate,
+                gross_recovery_rate_pct=gross_rate,
+                execution_cost=cost,
+                friction_penalty=friction,
+                net_financial_gain=net_gain,
+                roi_multiplier=round(roi, 2),
+                hard_failures_blocked=hard_blocked,
+                unnecessary_retries=violations,
+                avg_turnaround_seconds=avg_turnaround,
+            )
 
-        for r in sample_records:
-            tpl = r["template"]
-            amt = r["amount"]
-            # Blind retry retries everything (1.8 attempts avg per failure)
-            attempts_count = 2 if tpl["category"] != "HARD_FAILURE" else 1
-            blind_cost += Decimal(str(attempts_count * 5.0))  # ₹5 per attempt
-            blind_friction += Decimal(str(attempts_count * 15.0))  # ₹15 customer friction
+        no_action_metrics = _build_metrics("No Action (Baseline 0)", BenchmarkStrategy.NO_ACTION, "Naive baseline with zero automated recovery workflows.", res_no_action, 0.0)
+        blind_metrics = _build_metrics("Blind Same-Method Retry", BenchmarkStrategy.BLIND_RETRY, "Naive same-method retries without policy gates; causes repeat declines.", res_blind, 180.0)
+        heuristic_metrics = _build_metrics("Rule-Based Heuristic", BenchmarkStrategy.RULE_BASED_HEURISTIC, "Deterministic static rules without ML calibration or Net EV.", res_heur, 95.0)
+        recoverx_metrics = _build_metrics("RecoverX AI Revenue Engine", BenchmarkStrategy.RECOVERX_AI, "Full AI system: Failure intelligence + ML calibrated probability + Cost-aware Net EV.", res_rx, 42.5)
 
-            if tpl["category"] == "HARD_FAILURE":
-                blind_unnecessary_retries += attempts_count
-                blind_friction += Decimal("50.00")  # Extra penalty for retrying stolen/fraud card
+        # 3. Category Breakdown tracking actual simulation counts
+        cat_map: dict[str, dict[str, int]] = {}
+        for s, r_no, r_bl, r_he, r_rx in zip(scenarios_list, res_no_action, res_blind, res_heur, res_rx):
+            cat = s.observable.failure_category
+            if cat not in cat_map:
+                cat_map[cat] = {"total": 0, "blind": 0, "heur": 0, "rx": 0}
+            cat_map[cat]["total"] += 1
+            if r_bl.recovered:
+                cat_map[cat]["blind"] += 1
+            if r_he.recovered:
+                cat_map[cat]["heur"] += 1
+            if r_rx.recovered:
+                cat_map[cat]["rx"] += 1
 
-            # Check success probability
-            p = tpl["blind_success_p"]
-            if rng.random() < p:
-                blind_rec_txns += 1
-                blind_rec_gmv += amt
-
-        blind_net_recovery = round((blind_rec_txns / max(1, len([r for r in sample_records if r["recoverable"]]))) * 100, 2)
-        blind_gross_recovery = round((blind_rec_txns / num_transactions) * 100, 2)
-        blind_net_gain = blind_rec_gmv - blind_cost - blind_friction
-        blind_roi = float(blind_net_gain / max(Decimal("1.00"), blind_cost)) if blind_cost > 0 else 0.0
-
-        blind_metrics = StrategyMetrics(
-            strategy=BenchmarkStrategy.BLIND_RETRY,
-            strategy_name="Blind Same-Method Retry",
-            description="Naive 1-2x same-method retries without failure intelligence. Wastes fees on card declines and risks chargebacks on hard failures.",
-            total_failed_txns=num_transactions,
-            total_failed_gmv=total_failed_gmv,
-            recovered_txns=blind_rec_txns,
-            recovered_gmv=blind_rec_gmv,
-            net_recovery_rate_pct=blind_net_recovery,
-            gross_recovery_rate_pct=blind_gross_recovery,
-            execution_cost=blind_cost,
-            friction_penalty=blind_friction,
-            net_financial_gain=blind_net_gain,
-            roi_multiplier=round(blind_roi, 2),
-            hard_failures_blocked=0,
-            unnecessary_retries=blind_unnecessary_retries,
-            avg_turnaround_seconds=180.0,
-        )
-
-        # --- 3. RULE-BASED HEURISTIC ---
-        heur_rec_txns = 0
-        heur_rec_gmv = Decimal("0.00")
-        heur_cost = Decimal("0.00")
-        heur_friction = Decimal("0.00")
-        heur_hard_blocked = 0
-
-        for r in sample_records:
-            tpl = r["template"]
-            amt = r["amount"]
-
-            if tpl["category"] == "HARD_FAILURE":
-                heur_hard_blocked += 1
-                continue
-
-            heur_cost += Decimal("5.00")  # Single targeted attempt
-            heur_friction += Decimal("10.00")
-
-            p = tpl["heuristic_success_p"]
-            if rng.random() < p:
-                heur_rec_txns += 1
-                heur_rec_gmv += amt
-
-        heur_net_recovery = round((heur_rec_txns / max(1, len([r for r in sample_records if r["recoverable"]]))) * 100, 2)
-        heur_gross_recovery = round((heur_rec_txns / num_transactions) * 100, 2)
-        heur_net_gain = heur_rec_gmv - heur_cost - heur_friction
-        heur_roi = float(heur_net_gain / max(Decimal("1.00"), heur_cost)) if heur_cost > 0 else 0.0
-
-        heuristic_metrics = StrategyMetrics(
-            strategy=BenchmarkStrategy.RULE_BASED_HEURISTIC,
-            strategy_name="Rule-Based Heuristic",
-            description="Deterministic rules without ML calibration or cost-friction Net Expected Value optimization.",
-            total_failed_txns=num_transactions,
-            total_failed_gmv=total_failed_gmv,
-            recovered_txns=heur_rec_txns,
-            recovered_gmv=heur_rec_gmv,
-            net_recovery_rate_pct=heur_net_recovery,
-            gross_recovery_rate_pct=heur_gross_recovery,
-            execution_cost=heur_cost,
-            friction_penalty=heur_friction,
-            net_financial_gain=heur_net_gain,
-            roi_multiplier=round(heur_roi, 2),
-            hard_failures_blocked=heur_hard_blocked,
-            unnecessary_retries=0,
-            avg_turnaround_seconds=95.0,
-        )
-
-        # --- 4. RECOVERX AI ---
-        ai_rec_txns = 0
-        ai_rec_gmv = Decimal("0.00")
-        ai_cost = Decimal("0.00")
-        ai_friction = Decimal("0.00")
-        ai_hard_blocked = 0
-
-        for r in sample_records:
-            tpl = r["template"]
-            amt = r["amount"]
-
-            if tpl["category"] == "HARD_FAILURE":
-                ai_hard_blocked += 1
-                continue
-
-            # Model prediction + Net EV optimization routing
-            ai_cost += Decimal("4.20")  # Cost optimized per channel
-            ai_friction += Decimal("4.50")  # Lower friction with personalized smart switches
-
-            p = tpl["recoverx_success_p"]
-            # Boost for high customer success history
-            if r["customer_success_rate"] > 0.7:
-                p = min(0.96, p + 0.05)
-
-            if rng.random() < p:
-                ai_rec_txns += 1
-                ai_rec_gmv += amt
-
-        ai_net_recovery = round((ai_rec_txns / max(1, len([r for r in sample_records if r["recoverable"]]))) * 100, 2)
-        ai_gross_recovery = round((ai_rec_txns / num_transactions) * 100, 2)
-        ai_net_gain = ai_rec_gmv - ai_cost - ai_friction
-        ai_roi = float(ai_net_gain / max(Decimal("1.00"), ai_cost)) if ai_cost > 0 else 0.0
-
-        recoverx_metrics = StrategyMetrics(
-            strategy=BenchmarkStrategy.RECOVERX_AI,
-            strategy_name="RecoverX AI Revenue Engine",
-            description="Full AI system: Failure intelligence + ML calibrated probability + Cost-aware Net EV + Smart UPI/Link/Backoff routing + Strict Stopping Rules.",
-            total_failed_txns=num_transactions,
-            total_failed_gmv=total_failed_gmv,
-            recovered_txns=ai_rec_txns,
-            recovered_gmv=ai_rec_gmv,
-            net_recovery_rate_pct=ai_net_recovery,
-            gross_recovery_rate_pct=ai_gross_recovery,
-            execution_cost=ai_cost,
-            friction_penalty=ai_friction,
-            net_financial_gain=ai_net_gain,
-            roi_multiplier=round(ai_roi, 2),
-            hard_failures_blocked=ai_hard_blocked,
-            unnecessary_retries=0,
-            avg_turnaround_seconds=42.5,
-        )
-
-        # Category Breakdown
-        cat_counts: dict[str, dict[str, int]] = {}
-        for r in sample_records:
-            cat = r["category"]
-            if cat not in cat_counts:
-                cat_counts[cat] = {
-                    "total": 0,
-                    "no_action": 0,
-                    "blind": 0,
-                    "heuristic": 0,
-                    "recoverx": 0,
-                }
-            cat_counts[cat]["total"] += 1
-
-        # Fill category breakdown approximations based on results
         category_breakdowns: list[CategoryBreakdownItem] = []
-        for cat, counts in cat_counts.items():
-            tot = counts["total"]
-            if cat == "HARD_FAILURE":
-                rec_cnt = 0
-                blind_cnt = 0
-                heur_cnt = 0
-                rate = 0.0
-            elif cat == "TEMPORARY":
-                rec_cnt = int(tot * 0.82)
-                blind_cnt = int(tot * 0.40)
-                heur_cnt = int(tot * 0.58)
-                rate = 82.0
-            elif cat == "PAYMENT_METHOD":
-                rec_cnt = int(tot * 0.84)
-                blind_cnt = int(tot * 0.08)
-                heur_cnt = int(tot * 0.54)
-                rate = 84.0
-            else:  # CUSTOMER_ACTION
-                rec_cnt = int(tot * 0.74)
-                blind_cnt = int(tot * 0.12)
-                heur_cnt = int(tot * 0.50)
-                rate = 74.0
-
+        for cat, c in sorted(cat_map.items()):
+            tot = c["total"]
+            rx_cnt = c["rx"]
+            rate = round((rx_cnt / tot) * 100, 2) if tot > 0 else 0.0
             category_breakdowns.append(
                 CategoryBreakdownItem(
                     failure_category=cat,
                     total_count=tot,
                     no_action_recovered=0,
-                    blind_retry_recovered=blind_cnt,
-                    heuristic_recovered=heur_cnt,
-                    recoverx_recovered=rec_cnt,
+                    blind_retry_recovered=c["blind"],
+                    heuristic_recovered=c["heur"],
+                    recoverx_recovered=rx_cnt,
                     recoverx_recovery_rate_pct=rate,
                 )
             )
 
         # Comparative Lifts
-        inc_vs_no_action = ai_rec_gmv - Decimal("0.00")
+        ai_rec_gmv = recoverx_metrics.recovered_gmv
+        blind_rec_gmv = blind_metrics.recovered_gmv
+        heur_rec_gmv = heuristic_metrics.recovered_gmv
+
+        inc_vs_no_action = ai_rec_gmv
         inc_vs_blind = ai_rec_gmv - blind_rec_gmv
         inc_vs_heuristic = ai_rec_gmv - heur_rec_gmv
-        lift_vs_blind = round(ai_net_recovery - blind_net_recovery, 2)
-        lift_vs_heuristic = round(ai_net_recovery - heur_net_recovery, 2)
-        net_profit_gain_vs_blind = ai_net_gain - blind_net_gain
+        lift_vs_blind = round(recoverx_metrics.net_recovery_rate_pct - blind_metrics.net_recovery_rate_pct, 2)
+        lift_vs_heuristic = round(recoverx_metrics.net_recovery_rate_pct - heuristic_metrics.net_recovery_rate_pct, 2)
+        net_profit_gain_vs_blind = recoverx_metrics.net_financial_gain - blind_metrics.net_financial_gain
 
         return BenchmarkComparisonResponse(
             benchmark_id=benchmark_id,

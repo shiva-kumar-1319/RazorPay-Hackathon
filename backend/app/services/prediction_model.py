@@ -530,10 +530,14 @@ class RecoveryPredictionModel:
         logger.info("Model trained — AUC=%.4f  Accuracy=%.4f  F1=%.4f", self._metrics["auc"], self._metrics["accuracy"], self._metrics["f1"])
         return self._metrics
 
-    def predict_success_probability(self, features: list[float]) -> float:
-        """Return calibrated P(success) ∈ [0, 1] for a single feature vector."""
+    def ensure_trained(self, n_samples: int = 2500, seed: int = 42) -> None:
+        """Ensure the model is trained; if not, train automatically."""
         if not self._is_trained or self._model is None:
-            raise RuntimeError("Model is not trained yet. Call train() first.")
+            self.train(n_samples=n_samples, seed=seed)
+
+    def predict_success_probability(self, features: list[float]) -> float:
+        """Return calibrated P(success) in [0, 1] for a single feature vector."""
+        self.ensure_trained()
         X = np.array(features).reshape(1, -1)
         proba = self._model.predict_proba(X)[0, 1]
         return round(float(proba), 4)
@@ -543,8 +547,10 @@ class RecoveryPredictionModel:
         # Hard failure with STOP_RECOVERY should have near-zero probability
         if ctx.failure_category.upper() == "HARD_FAILURE" and ctx.action_type == ActionType.STOP_RECOVERY:
             return 0.0
+        self.ensure_trained()
         features = self._extractor.extract(ctx)
         return self.predict_success_probability(features)
+
 
     def get_feature_importance(self) -> dict[str, float]:
         """Return feature name → importance mapping from the raw GBM."""

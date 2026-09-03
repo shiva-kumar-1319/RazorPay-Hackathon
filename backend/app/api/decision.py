@@ -63,8 +63,14 @@ def evaluate_actions(req: DecisionRequest) -> DecisionResponse:
         failure_category=req.failure_category,
         amount=req.amount,
         candidate_action_types=candidates,
-        customer_intel=None,  # API-driven — customer intel passed as flat fields
         hour_of_day=req.hour_of_day,
+        customer_success_rate=req.customer_success_rate,
+        customer_recovery_rate=req.customer_recovery_rate,
+        customer_risk_score=req.customer_risk_score,
+        customer_failure_streak=req.customer_failure_streak,
+        customer_avg_txn_value=req.customer_avg_txn_value,
+        customer_total_txns=req.customer_total_txns,
+        behavioral_segment=req.behavioral_segment,
     )
 
     explanation_obj = recovery_decision_engine.explain_decision(scored)
@@ -101,7 +107,15 @@ def recommend_best_action(req: DecisionRequest) -> RecommendationResponse:
         amount=req.amount,
         candidate_action_types=candidates,
         hour_of_day=req.hour_of_day,
+        customer_success_rate=req.customer_success_rate,
+        customer_recovery_rate=req.customer_recovery_rate,
+        customer_risk_score=req.customer_risk_score,
+        customer_failure_streak=req.customer_failure_streak,
+        customer_avg_txn_value=req.customer_avg_txn_value,
+        customer_total_txns=req.customer_total_txns,
+        behavioral_segment=req.behavioral_segment,
     )
+
 
     explanation_obj = recovery_decision_engine.explain_decision(scored)
     best = recovery_decision_engine.select_best_action(scored)

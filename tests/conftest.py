@@ -1,7 +1,12 @@
 """Shared pytest fixtures for the RecoverX test suite."""
 
+import os
 from collections.abc import Generator
 from decimal import Decimal
+
+# Ensure test environment is explicitly recognized across all tests
+os.environ["APP_ENV"] = "test"
+
 
 import pytest
 from fastapi.testclient import TestClient

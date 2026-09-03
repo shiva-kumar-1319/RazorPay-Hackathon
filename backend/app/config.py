@@ -21,7 +21,13 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     auto_create_schema: bool = False
     run_migrations: bool = False
-    cors_origins: list[str] = ["*"]
+    cors_origins: list[str] = [
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+    ]
+
 
     @field_validator("cors_origins", mode="before")
     @classmethod

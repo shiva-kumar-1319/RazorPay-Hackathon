@@ -1,0 +1,1 @@
+"""Invariants test suite."""

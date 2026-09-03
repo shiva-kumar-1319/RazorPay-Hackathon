@@ -7,9 +7,13 @@
 [![Safety](https://img.shields.io/badge/Safety_Guards-6_Stopping_Rules_100%25-green.svg?style=for-the-badge&logo=security&logoColor=white)](https://github.com/shiva-kumar-1319/RazorPay-Hackathon)
 [![Idempotency](https://img.shields.io/badge/Execution-Transactional_Outbox-purple.svg?style=for-the-badge&logo=postgresql&logoColor=white)](https://github.com/shiva-kumar-1319/RazorPay-Hackathon)
 [![Audit](https://img.shields.io/badge/Audit-SHA--256_Ledger-informational.svg?style=for-the-badge&logo=blockchain.com&logoColor=white)](https://github.com/shiva-kumar-1319/RazorPay-Hackathon)
-[![Tests](https://img.shields.io/badge/Tests-169%2F169_Passing-brightgreen.svg?style=for-the-badge&logo=pytest&logoColor=white)](https://pytest.org/)
+[![Tests](https://img.shields.io/badge/Tests-All_Suites_Passing-brightgreen.svg?style=for-the-badge&logo=pytest&logoColor=white)](https://pytest.org/)
 
 > **RecoverX** is an enterprise-grade, autonomous payment recovery system engineered for modern payment aggregators and high-volume merchants. It replaces naive blind retries with a **Bounded ReAct Tool-Calling Agent**, **Calibrated Gradient-Boosted Recovery ML**, **Net Expected Value ($EV$) Optimization**, **Distributed Idempotent Execution**, and an **Immutable SHA-256 Cryptographic Audit Ledger**.
+
+> [!IMPORTANT]
+> **Razorpay AI Buildathon 2026 Prototype Disclosure**:
+> RecoverX is built as an autonomous revenue recovery prototype for Track 03 (AI Revenue Recovery). Payment gateway rail physics and bank downtime dynamics are evaluated via a rigorous, reproducible simulator (`benchmark/simulator.py`) separating latent ground truth from observable failure events. In live environments, card vaults and certified aggregators handle raw PAN/CVV. See [docs/SECURITY.md](docs/SECURITY.md) and [docs/METRICS.md](docs/METRICS.md).
 
 ---
 
@@ -252,26 +256,27 @@ In financial payment processing, **knowing when NOT to retry is as critical as k
 
 ## 📊 Empirical 4-Way Benchmark & Business Proof
 
-RecoverX includes a built-in empirical simulation benchmark comparing 4 payment recovery strategies on identical 100-transaction test batches:
+RecoverX includes a standalone, reproducible comparative benchmark evaluating 4 payment recovery strategies on identical 1,000-transaction test batches (Deterministic Seed: 42):
 
 ```
-┌──────────────────────────────────────────────────────────────────────────────────────────┐
-│                      4-WAY RECOVERY STRATEGY COMPARATIVE BENCHMARK                       │
-├──────────────────────┬─────────────┬───────────────┬──────────────────┬──────────────────┤
-│ Strategy Name        │ GMV Loss    │ GMV Recovered │ Recovery Rate %  │ Net Financial ROI│
-├──────────────────────┼─────────────┼───────────────┼──────────────────┼──────────────────┤
-│ 1. NO_ACTION         │ ₹534,600.00 │ ₹        0.00 │             0.0% │             0.0x │
-│ 2. BLIND_RETRY       │ ₹534,600.00 │ ₹  126,598.93 │            21.1% │           142.4x │
-│ 3. HEURISTIC_RULES   │ ₹534,600.00 │ ₹  283,314.57 │            50.7% │           795.1x │
-│ 4. RECOVERX_AI 🏆    │ ₹534,600.00 │ ₹  451,841.86 │            84.5% │         1,513.2x │
-└──────────────────────┴─────────────┴───────────────┴──────────────────┴──────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                       4-WAY RECOVERY STRATEGY COMPARATIVE BENCHMARK (1,000 SCENARIOS)                       │
+├──────────────────────┬──────────┬───────────────┬──────────────────┬──────────────────┬─────────────────────┤
+│ Strategy Name        │ Recovery%│ Volume Recov  │ Net Revenue      │ Hard Violations  │ Net Lift vs Blind   │
+├──────────────────────┼──────────┼───────────────┼──────────────────┼──────────────────┼─────────────────────┤
+│ 1. NO_ACTION         │    0.00% │ INR      0.00 │ INR         0.00 │        0         │ Base                │
+│ 2. BLIND_RETRY       │   12.00% │ INR 779,598.60│ INR   569,052.53 │       62         │ Reference           │
+│ 3. HEURISTIC_RULES   │   59.50% │INR3,799,019.29│ INR 3,767,112.57 │        0         │ +INR 3,198,060.04   │
+│ 4. RECOVERX_AI 🏆    │   59.30% │INR3,789,975.60│ INR 3,757,329.78 │        0         │ +INR 3,188,277.25   │
+└──────────────────────┴──────────┴───────────────┴──────────────────┴──────────────────┴─────────────────────┘
 ```
 
-### Key Business Metrics:
-* **84.5% Net Recovery Rate**: +63.4% lift over blind retries and +33.8% lift over static heuristics.
-* **$1,513.2\times$ Net ROI**: ₹451,841.86 GMV recovered against just ₹298.20 in execution and notification costs.
-* **64.8% Friction Reduction**: By eliminating naive failed retries and routing directly to customer-preferred UPI channels.
-* **100% Stopping Rule Compliance**: Exactly 0 unauthorized retries dispatched on fraud or stolen instruments.
+### Verified Empirical Performance (Seed 42):
+* **+INR 3,188,277.25 Net Lift (+560.3%) over Blind Retry**: Recovers 59.30% of lost revenue while avoiding wasted rail fees and customer friction.
+* **Strict Zero Hard-Stop Violations**: While Blind Retry suffered **62 severe policy violations** by re-hammering hard terminal failures (`FRAUD_REJECTED`, `STOLEN_CARD`, `INVALID_ACCOUNT`), RecoverX achieved strictly **0 violations**.
+* **Calibrated Machine Learning**: Supervised `CalibratedClassifierCV` using Isotonic Regression achieves a Brier score of **0.1466** and ROC-AUC of **0.8351** on holdout testing.
+* **Full Audit Ledger Integrity**: 100% of recovery actions are chained in an immutable SHA-256 cryptographic sequence for complete auditor transparency.
+
 
 ---
 
@@ -290,11 +295,12 @@ RecoverX includes a modern, high-aesthetic dark-mode merchant dashboard accessib
 ## 🚀 Quickstart & Verification Guide
 
 ### Prerequisites
-* Python 3.11+
+* Python 3.11+ / Python 3.12
 * Windows / macOS / Linux
 
-### 1. Clone & Set Up Environment
+### 1. Set Up Environment & Install Dependencies
 ```bash
+# Clone repository
 git clone https://github.com/shiva-kumar-1319/RazorPay-Hackathon.git
 cd RazorPay-Hackathon
 
@@ -306,28 +312,40 @@ python -m venv .venv
 source .venv/bin/activate
 
 # Install dependencies
-pip install -r backend/requirements.txt
+pip install -r requirements.txt
 ```
 
-### 2. Run the End-to-End Judge Demo Flow
-Execute the standalone 7-step interactive demonstration script:
+### 2. Run Comprehensive Automated Test Suites
 ```bash
-python scripts/demo_flow.py
+pytest --verbose
 ```
-*Executes all 5 recovery scenarios, the 4-way empirical benchmark, and SHA-256 audit verification.*
+*Executes unit tests, security tests (`tests/security/`), invariant tests (`tests/invariants/`), and benchmark tests (`tests/evaluation/`).*
 
-### 3. Run the Full Test Suite
+### 3. Run Reproducible 4-Way Comparative Benchmark
 ```bash
-python run_tests.py
+python -m benchmark.run_benchmark --seed 42 --transactions 1000
 ```
-*Runs all 169 unit, integration, agent, execution, policy, benchmark, and API tests (100% pass rate).*
+*Executes all 4 strategies (No Action, Blind Retry, Heuristic, RecoverX) across 1,000 transactions and generates statistical proof.*
 
-### 4. Launch the FastAPI Server & Merchant Dashboard
+### 4. Run Autonomous End-to-End Demo Script
+```bash
+python scripts/demo_end_to_end.py
+```
+*Demonstrates all 5 production scenarios from failure ingestion to final settlement and audit verification.*
+
+### 5. Run Evaluator Compliance Audit Check
+```bash
+python scripts/evaluator_check.py
+```
+*Validates that all 28 evaluation criteria pass cleanly (CRITICAL: 0, HIGH: 0).*
+
+### 6. Launch FastAPI Server & Merchant Dashboard
 ```bash
 python -m uvicorn backend.app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 * Open **Merchant Dashboard**: [http://127.0.0.1:8000/dashboard](http://127.0.0.1:8000/dashboard)
 * Open **Interactive API Docs (Swagger UI)**: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
+
 * Open **Customer Recovery Portal Demo**: [http://127.0.0.1:8000/pay/demo](http://127.0.0.1:8000/pay/demo)
 
 ---

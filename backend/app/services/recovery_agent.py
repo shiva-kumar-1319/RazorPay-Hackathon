@@ -351,5 +351,33 @@ class PaymentRecoveryAgent:
         )
 
 
-# Global Singleton Agent
+class DeterministicAgentFallback:
+    """Deterministic ReAct reasoning fallback when no LLM API key is configured.
+
+    Executes the exact same bounded tool trajectory deterministically, emitting
+    an AgentInvestigationResponse with detailed ReAct step traces.
+    """
+
+    def __init__(self, tool_registry: AgentToolRegistry | None = None) -> None:
+        self.agent = PaymentRecoveryAgent(tool_registry=tool_registry)
+
+    def investigate_transaction(
+        self,
+        session: Session,
+        transaction_id: str | UUID,
+        override_failure_code: str | None = None,
+        execute_bounded_action: bool = False,
+    ) -> AgentInvestigationResponse:
+        """Run the deterministic bounded investigation loop (propose plan only)."""
+        return self.agent.investigate_transaction(
+            session=session,
+            transaction_id=transaction_id,
+            override_failure_code=override_failure_code,
+            execute_bounded_action=execute_bounded_action,
+        )
+
+
+# Global Singleton Agent and Fallback
 payment_recovery_agent = PaymentRecoveryAgent()
+deterministic_agent_fallback = DeterministicAgentFallback()
+

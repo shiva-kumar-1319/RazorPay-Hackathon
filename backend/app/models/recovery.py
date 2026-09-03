@@ -196,6 +196,10 @@ class OutboxEvent(TimestampedModel, Base):
     aggregate_id: Mapped[str] = mapped_column(String(64), index=True)
     payload: Mapped[dict[str, Any]] = mapped_column(JSON)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    retry_count: Mapped[int] = mapped_column(Integer, default=0)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="PENDING", index=True)
 
 
 class AuditLog(TimestampedModel, Base):
@@ -206,8 +210,31 @@ class AuditLog(TimestampedModel, Base):
     transaction_id: Mapped[UUID] = mapped_column(ForeignKey("transactions.id"), index=True)
     event_type: Mapped[str] = mapped_column(String(96))
     actor: Mapped[str] = mapped_column(String(64))
+    action: Mapped[str] = mapped_column(String(96), default="UNKNOWN")
+    before_state: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    after_state: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    policy_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    sequence_number: Mapped[int] = mapped_column(Integer, default=1)
+    previous_hash: Mapped[str] = mapped_column(String(64), default="0" * 64)
+    event_hash: Mapped[str] = mapped_column(String(64), default="", index=True)
     reason_codes: Mapped[list[str]] = mapped_column(JSON, default=list)
     metadata_: Mapped[dict[str, Any]] = mapped_column("metadata", JSON, default=dict)
+
+
+class IdempotencyRecord(TimestampedModel, Base):
+    __tablename__ = "idempotency_records"
+    __table_args__ = (
+        Index("uq_idempotency_key", "idempotency_key", unique=True),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    idempotency_key: Mapped[str] = mapped_column(String(160), unique=True, index=True)
+    request_hash: Mapped[str] = mapped_column(String(64), index=True)
+    status: Mapped[str] = mapped_column(String(32), default="PENDING", index=True)  # PENDING, COMPLETED, FAILED
+    execution_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    response_payload: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
 
 
 class ProcessedEvent(TimestampedModel, Base):

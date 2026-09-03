@@ -1,11 +1,14 @@
 """API endpoints for Recovery Execution engine, customer recovery links, and scheduling."""
 
+import os
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from backend.app.api.auth import get_current_merchant, verify_merchant_ownership
 from backend.app.db import get_db
+from backend.app.models.recovery import Transaction
 from backend.app.schemas.execution import (
     CustomerCheckoutDetailResponse,
     CustomerCheckoutSubmitRequest,
@@ -27,8 +30,27 @@ router = APIRouter(prefix="/api/v1/execution", tags=["execution"])
 def execute_recovery_action(
     request: ExecuteActionRequest,
     db: Session = Depends(get_db),
+    merchant_id: str = Depends(get_current_merchant),
 ) -> ExecuteActionResponse:
     """Execute an automated, bounded recovery action (retry, switch, delayed retry, or customer recovery)."""
+    # Guard against force_outcome abuse outside of testing
+    if request.force_outcome is not None:
+        app_env = os.getenv("APP_ENV", "development").lower()
+        if app_env not in ("test", "testing"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="force_outcome parameter is forbidden in non-test environments.",
+            )
+
+    # Validate merchant tenant ownership
+    try:
+        txn_uuid = UUID(str(request.transaction_id))
+        txn = db.get(Transaction, txn_uuid)
+        if txn:
+            verify_merchant_ownership(merchant_id, txn.merchant_id)
+    except ValueError:
+        pass
+
     try:
         res = recovery_execution_engine.execute_action(
             session=db,
@@ -57,6 +79,15 @@ def run_due_scheduled_retries(
     limit = request.limit if request else 50
     force_now = request.force_now if request else False
     force_outcome = request.force_outcome if request else None
+
+    if force_outcome is not None:
+        app_env = os.getenv("APP_ENV", "development").lower()
+        if app_env not in ("test", "testing"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="force_outcome parameter is forbidden in non-test environments.",
+            )
+
     return recovery_execution_engine.process_due_scheduled_retries(
         session=db,
         limit=limit,
@@ -69,8 +100,17 @@ def run_due_scheduled_retries(
 def create_customer_recovery_link(
     request: CustomerRecoveryLinkCreateRequest,
     db: Session = Depends(get_db),
+    merchant_id: str = Depends(get_current_merchant),
 ) -> CustomerRecoveryLinkResponse:
     """Generate a tokenized customer recovery session and dispatch notification."""
+    try:
+        txn_uuid = UUID(str(request.transaction_id))
+        txn = db.get(Transaction, txn_uuid)
+        if txn:
+            verify_merchant_ownership(merchant_id, txn.merchant_id)
+    except ValueError:
+        pass
+
     try:
         return recovery_execution_engine.create_customer_recovery_link(
             session=db,
@@ -80,6 +120,7 @@ def create_customer_recovery_link(
             expires_in_minutes=request.expires_in_minutes,
             custom_message=request.custom_message,
         )
+
     except ValueError as ex:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND if "not found" in str(ex).lower() else status.HTTP_400_BAD_REQUEST,

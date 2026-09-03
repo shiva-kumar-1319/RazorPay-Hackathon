@@ -16,7 +16,7 @@ def test_list_agent_tools_api(client: TestClient) -> None:
     data = resp.json()
     assert "tools" in data
     assert "guardrails" in data
-    assert len(data["tools"]) == 6
+    assert len(data["tools"]) >= 6
     tool_names = [t["name"] for t in data["tools"]]
     assert "get_transaction_context" in tool_names
     assert "get_failure_policy" in tool_names
@@ -24,6 +24,9 @@ def test_list_agent_tools_api(client: TestClient) -> None:
     assert "create_recovery_plan" in tool_names
     assert "request_execution" in tool_names
     assert "write_explanation" in tool_names
+    assert "inspect_failure" in tool_names
+    assert "propose_recovery_plan" in tool_names
+
 
 
 def test_execute_tool_api_success(client: TestClient) -> None:

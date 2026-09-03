@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import logging
-from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from backend.app.db import reset_current_session, set_current_session
@@ -18,6 +18,9 @@ from backend.app.schemas.events import DomainEventEnvelope
 from backend.app.services.event_bus import EventBus, get_event_bus
 
 logger = logging.getLogger("recoverx.outbox_publisher")
+
+MAX_OUTBOX_RETRIES = 5
+INITIAL_BACKOFF_SECONDS = 2
 
 
 class OutboxPublisherService:
@@ -29,11 +32,22 @@ class OutboxPublisherService:
     def publish_pending_events(self, session: Session, limit: int = 100) -> tuple[int, int]:
         """Fetch unpublished outbox rows, dispatch to the event bus, and mark published.
 
+        Applies exponential backoff on publication failures and quarantines events only after
+        MAX_OUTBOX_RETRIES attempts. Never marks failed events as published prematurely.
+
         Returns (published_count, failed_count).
         """
+        now = datetime.now(timezone.utc)
         stmt = (
             select(OutboxEvent)
-            .where(OutboxEvent.published_at.is_(None))
+            .where(
+                OutboxEvent.published_at.is_(None),
+                OutboxEvent.status == "PENDING",
+                or_(
+                    OutboxEvent.next_attempt_at.is_(None),
+                    OutboxEvent.next_attempt_at <= now,
+                ),
+            )
             .order_by(OutboxEvent.created_at.asc())
             .limit(limit)
         )
@@ -43,7 +57,6 @@ class OutboxPublisherService:
 
         published_count = 0
         failed_count = 0
-        now = datetime.now(timezone.utc)
 
         token = set_current_session(session)
         try:
@@ -77,27 +90,37 @@ class OutboxPublisherService:
 
                     # Publish to EventBus
                     self.event_bus.publish_sync(envelope)
-                    outbox_row.published_at = now
+                    outbox_row.published_at = datetime.now(timezone.utc)
+                    outbox_row.status = "PUBLISHED"
                     published_count += 1
 
                 except Exception as exc:
                     failed_count += 1
-                    logger.exception("Failed to publish outbox event %s: %s", outbox_row.id, exc)
+                    err_msg = str(exc)[:480]
+                    logger.exception("Failed to publish outbox event %s (attempt %d): %s", outbox_row.id, outbox_row.retry_count + 1, exc)
 
-                    # Route poison/malformed event to quarantine to preserve pipeline flow
-                    payload_json = json.dumps(outbox_row.payload, default=str) if outbox_row.payload else "{}"
-                    payload_hash = hashlib.sha256(payload_json.encode("utf-8")).hexdigest()
-                    quarantine = QuarantineEvent(
-                        source_event_id=str(outbox_row.id),
-                        event_type=outbox_row.event_type,
-                        consumer_name="outbox_publisher",
-                        reason=f"Publication failed: {str(exc)[:240]}",
-                        payload=outbox_row.payload or {},
-                        payload_hash=payload_hash,
-                        status="QUARANTINED",
-                    )
-                    session.add(quarantine)
-                    outbox_row.published_at = now  # Mark published so publisher does not lock forever
+                    outbox_row.retry_count += 1
+                    outbox_row.last_error = err_msg
+
+                    if outbox_row.retry_count >= MAX_OUTBOX_RETRIES:
+                        # Poison event: quarantine after exceeding maximum retry attempts
+                        outbox_row.status = "QUARANTINED"
+                        payload_json = json.dumps(outbox_row.payload, default=str) if outbox_row.payload else "{}"
+                        payload_hash = hashlib.sha256(payload_json.encode("utf-8")).hexdigest()
+                        quarantine = QuarantineEvent(
+                            source_event_id=str(outbox_row.id),
+                            event_type=outbox_row.event_type,
+                            consumer_name="outbox_publisher",
+                            reason=f"Max retries ({MAX_OUTBOX_RETRIES}) exceeded: {err_msg}",
+                            payload=outbox_row.payload or {},
+                            payload_hash=payload_hash,
+                            status="QUARANTINED",
+                        )
+                        session.add(quarantine)
+                    else:
+                        # Exponential backoff: base * 2^attempts seconds (max 300s)
+                        backoff_secs = min(300, INITIAL_BACKOFF_SECONDS * (2 ** (outbox_row.retry_count - 1)))
+                        outbox_row.next_attempt_at = datetime.now(timezone.utc) + timedelta(seconds=backoff_secs)
 
             session.commit()
         finally:
@@ -108,13 +131,17 @@ class OutboxPublisherService:
 
     @staticmethod
     def get_backlog_count(session: Session) -> int:
-        """Count unpublished outbox rows."""
-        stmt = select(func.count()).select_from(OutboxEvent).where(OutboxEvent.published_at.is_(None))
+        """Count unpublished, pending outbox rows."""
+        stmt = (
+            select(func.count())
+            .select_from(OutboxEvent)
+            .where(OutboxEvent.published_at.is_(None), OutboxEvent.status == "PENDING")
+        )
         return session.scalar(stmt) or 0
 
     @staticmethod
     def get_published_count(session: Session) -> int:
-        """Count published outbox rows."""
+        """Count successfully published outbox rows."""
         stmt = select(func.count()).select_from(OutboxEvent).where(OutboxEvent.published_at.is_not(None))
         return session.scalar(stmt) or 0
 

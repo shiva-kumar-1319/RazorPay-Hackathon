@@ -9,6 +9,8 @@ Day 11 deliverable: Implements automated, bounded execution across 4 recovery st
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import random
 import secrets
@@ -17,7 +19,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session, joinedload
 
 from backend.app.models.recovery import (
@@ -27,6 +29,7 @@ from backend.app.models.recovery import (
     CustomerIntelligence,
     CustomerRecoverySession,
     FailureEvent,
+    IdempotencyRecord,
     OutboxEvent,
     PaymentAttempt,
     RecoveryAction,
@@ -35,6 +38,8 @@ from backend.app.models.recovery import (
     Transaction,
     TransactionStatus,
 )
+from backend.app.services.audit_chain import record_audit_event
+
 from backend.app.schemas.execution import (
     CustomerCheckoutDetailResponse,
     CustomerCheckoutSubmitResponse,
@@ -118,6 +123,49 @@ class RecoveryExecutionEngine:
         execution_id = f"exec_{uuid4().hex[:10]}"
         params = parameters or {}
 
+        # 0. Idempotency Key Validation & Cached Return
+        idemp_rec: IdempotencyRecord | None = None
+        if idempotency_key:
+            payload_raw = f"{txn_uuid}:{action_type}:{json.dumps(params, sort_keys=True)}"
+            req_hash = hashlib.sha256(payload_raw.encode("utf-8")).hexdigest()
+            idemp_rec = session.scalar(
+                select(IdempotencyRecord).where(IdempotencyRecord.idempotency_key == idempotency_key)
+            )
+            if idemp_rec:
+                if idemp_rec.request_hash != req_hash:
+                    return ExecuteActionResponse(
+                        execution_id=execution_id,
+                        transaction_id=str(txn_uuid),
+                        recovery_case_id="none",
+                        action_type=str(action_type or "UNKNOWN"),
+                        disposition="CONFLICT",
+                        status="CONFLICT",
+                        message="Idempotency key reuse with different request payload.",
+                        guard_checks={"idempotency_valid": False},
+                    )
+                if idemp_rec.status == "COMPLETED" and idemp_rec.response_payload:
+                    return ExecuteActionResponse.model_validate(idemp_rec.response_payload)
+                if idemp_rec.status == "PENDING":
+                    return ExecuteActionResponse(
+                        execution_id=execution_id,
+                        transaction_id=str(txn_uuid),
+                        recovery_case_id="none",
+                        action_type=str(action_type or "UNKNOWN"),
+                        disposition="IN_PROGRESS",
+                        status="IN_PROGRESS",
+                        message="Concurrent operation in progress for this idempotency key.",
+                        guard_checks={"idempotency_valid": False},
+                    )
+            else:
+                idemp_rec = IdempotencyRecord(
+                    idempotency_key=idempotency_key,
+                    request_hash=req_hash,
+                    status="PENDING",
+                    execution_id=execution_id,
+                )
+                session.add(idemp_rec)
+                session.flush()
+
         # 1. Locate Transaction with attempts, customer, and recovery cases
         txn = session.scalar(
             select(Transaction)
@@ -128,6 +176,7 @@ class RecoveryExecutionEngine:
             )
             .where(Transaction.id == txn_uuid)
         )
+
         if not txn:
             return ExecuteActionResponse(
                 execution_id=execution_id,
@@ -272,8 +321,9 @@ class RecoveryExecutionEngine:
         # ====================================================================
         # DISPATCH TO WORKFLOW HANDLERS
         # ====================================================================
+        resp: ExecuteActionResponse
         if act_enum == ActionType.RETRY_SAME_METHOD:
-            return self._execute_retry_same_method(
+            resp = self._execute_retry_same_method(
                 session=session,
                 txn=txn,
                 recovery_case=recovery_case,
@@ -281,10 +331,9 @@ class RecoveryExecutionEngine:
                 execution_id=execution_id,
                 force_outcome=force_outcome,
             )
-
-        if act_enum in (ActionType.SWITCH_TO_UPI, ActionType.SWITCH_TO_CARD, ActionType.SWITCH_TO_NETBANKING):
+        elif act_enum in (ActionType.SWITCH_TO_UPI, ActionType.SWITCH_TO_CARD, ActionType.SWITCH_TO_NETBANKING):
             target_method = "UPI" if act_enum == ActionType.SWITCH_TO_UPI else ("NETBANKING" if act_enum == ActionType.SWITCH_TO_NETBANKING else "CARD")
-            return self._execute_method_switch(
+            resp = self._execute_method_switch(
                 session=session,
                 txn=txn,
                 recovery_case=recovery_case,
@@ -294,9 +343,8 @@ class RecoveryExecutionEngine:
                 force_outcome=force_outcome,
                 parameters=params,
             )
-
-        if act_enum == ActionType.DELAYED_RETRY:
-            return self._schedule_delayed_retry(
+        elif act_enum == ActionType.DELAYED_RETRY:
+            resp = self._schedule_delayed_retry(
                 session=session,
                 txn=txn,
                 recovery_case=recovery_case,
@@ -306,9 +354,8 @@ class RecoveryExecutionEngine:
                 attempt_count=len(attempts),
                 parameters=params,
             )
-
-        if act_enum in (ActionType.CUSTOMER_NOTIFICATION, ActionType.PAYMENT_LINK):
-            return self._execute_customer_recovery(
+        elif act_enum in (ActionType.CUSTOMER_NOTIFICATION, ActionType.PAYMENT_LINK):
+            resp = self._execute_customer_recovery(
                 session=session,
                 txn=txn,
                 recovery_case=recovery_case,
@@ -316,18 +363,26 @@ class RecoveryExecutionEngine:
                 execution_id=execution_id,
                 parameters=params,
             )
+        else:
+            resp = ExecuteActionResponse(
+                execution_id=execution_id,
+                transaction_id=str(txn.id),
+                recovery_case_id=str(recovery_case.id),
+                recovery_action_id=str(target_action_obj.id),
+                action_type=act_enum.value,
+                disposition="REFUSED",
+                status="REFUSED",
+                message=f"No workflow handler for action {act_enum.value}",
+            )
 
-        # Fallback
-        return ExecuteActionResponse(
-            execution_id=execution_id,
-            transaction_id=str(txn.id),
-            recovery_case_id=str(recovery_case.id),
-            recovery_action_id=str(target_action_obj.id),
-            action_type=act_enum.value,
-            disposition="REFUSED",
-            status="REFUSED",
-            message=f"No workflow handler for action {act_enum.value}",
-        )
+        if idemp_rec and resp.status in ("SUCCEEDED", "FAILED", "BLOCKED", "REFUSED"):
+            idemp_rec.status = "COMPLETED"
+            idemp_rec.response_payload = resp.model_dump(mode="json")
+            idemp_rec.completed_at = datetime.now(timezone.utc)
+            session.commit()
+
+        return resp
+
 
     # ========================================================================
     # 2. WORKFLOW 1: IMMEDIATE RETRY (RETRY_SAME_METHOD)
@@ -419,21 +474,25 @@ class RecoveryExecutionEngine:
                     },
                 )
             )
-            session.add(
-                AuditLog(
-                    transaction_id=txn.id,
-                    event_type="recovery.executed.v1",
-                    actor=self.EXECUTOR_ACTOR,
-                    reason_codes=["IMMEDIATE_RETRY_SUCCESS", "RECOVERY_COMPLETED"],
-                    metadata_={
-                        "execution_id": execution_id,
-                        "action_type": "RETRY_SAME_METHOD",
-                        "attempt_number": next_attempt_number,
-                        "outcome": "SUCCESS",
-                        "latency_ms": latency_ms,
-                    },
-                )
+            record_audit_event(
+                session=session,
+                transaction_id=txn.id,
+                actor=self.EXECUTOR_ACTOR,
+                action="RETRY_SAME_METHOD",
+                before_state="FAILED",
+                after_state=TransactionStatus.SUCCEEDED.value,
+                policy_version=recovery_case.policy_version,
+                reason_codes=["IMMEDIATE_RETRY_SUCCESS", "RECOVERY_COMPLETED"],
+                details={
+                    "execution_id": execution_id,
+                    "action_type": "RETRY_SAME_METHOD",
+                    "attempt_number": next_attempt_number,
+                    "outcome": "SUCCESS",
+                    "latency_ms": latency_ms,
+                },
+                event_type="recovery.executed.v1",
             )
+
             session.commit()
 
             return ExecuteActionResponse(
@@ -484,15 +543,19 @@ class RecoveryExecutionEngine:
         action.execution_channel = "DIRECT_RETRY_API"
         action.metadata_ = {"execution_id": execution_id, "attempt_number": next_attempt_number, "outcome": "FAIL", "failure_code": fail_code}
 
-        session.add(
-            AuditLog(
-                transaction_id=txn.id,
-                event_type="recovery.executed.v1",
-                actor=self.EXECUTOR_ACTOR,
-                reason_codes=["IMMEDIATE_RETRY_FAILED"],
-                metadata_={"execution_id": execution_id, "action_type": "RETRY_SAME_METHOD", "attempt_number": next_attempt_number, "outcome": "FAIL"},
-            )
+        record_audit_event(
+            session=session,
+            transaction_id=txn.id,
+            actor=self.EXECUTOR_ACTOR,
+            action="RETRY_SAME_METHOD",
+            before_state="FAILED",
+            after_state="FAILED",
+            policy_version=recovery_case.policy_version,
+            reason_codes=["IMMEDIATE_RETRY_FAILED"],
+            details={"execution_id": execution_id, "action_type": "RETRY_SAME_METHOD", "attempt_number": next_attempt_number, "outcome": "FAIL"},
+            event_type="recovery.executed.v1",
         )
+
         session.commit()
 
         return ExecuteActionResponse(
@@ -621,22 +684,26 @@ class RecoveryExecutionEngine:
                     },
                 )
             )
-            session.add(
-                AuditLog(
-                    transaction_id=txn.id,
-                    event_type="recovery.executed.v1",
-                    actor=self.EXECUTOR_ACTOR,
-                    reason_codes=["PAYMENT_METHOD_SWITCH_SUCCESS", f"SWITCHED_TO_{target_method}"],
-                    metadata_={
-                        "execution_id": execution_id,
-                        "action_type": action_type_name,
-                        "switched_to": target_method,
-                        "attempt_number": next_attempt_number,
-                        "outcome": "SUCCESS",
-                        "instrument": instrument_meta,
-                    },
-                )
+            record_audit_event(
+                session=session,
+                transaction_id=txn.id,
+                actor=self.EXECUTOR_ACTOR,
+                action=action_type_name,
+                before_state="FAILED",
+                after_state=TransactionStatus.SUCCEEDED.value,
+                policy_version=recovery_case.policy_version,
+                reason_codes=["PAYMENT_METHOD_SWITCH_SUCCESS", f"SWITCHED_TO_{target_method}"],
+                details={
+                    "execution_id": execution_id,
+                    "action_type": action_type_name,
+                    "switched_to": target_method,
+                    "attempt_number": next_attempt_number,
+                    "outcome": "SUCCESS",
+                    "instrument": instrument_meta,
+                },
+                event_type="recovery.executed.v1",
             )
+
             session.commit()
 
             return ExecuteActionResponse(
@@ -674,15 +741,19 @@ class RecoveryExecutionEngine:
         action.execution_channel = default_channel
         action.metadata_ = {"execution_id": execution_id, "switched_to": target_method, "outcome": "FAIL", "failure_code": fail_code}
 
-        session.add(
-            AuditLog(
-                transaction_id=txn.id,
-                event_type="recovery.executed.v1",
-                actor=self.EXECUTOR_ACTOR,
-                reason_codes=[f"SWITCH_TO_{target_method}_FAILED"],
-                metadata_={"execution_id": execution_id, "action_type": action_type_name, "outcome": "FAIL", "failure_code": fail_code},
-            )
+        record_audit_event(
+            session=session,
+            transaction_id=txn.id,
+            actor=self.EXECUTOR_ACTOR,
+            action=action_type_name,
+            before_state="FAILED",
+            after_state="FAILED",
+            policy_version=recovery_case.policy_version,
+            reason_codes=[f"SWITCH_TO_{target_method}_FAILED"],
+            details={"execution_id": execution_id, "action_type": action_type_name, "outcome": "FAIL", "failure_code": fail_code},
+            event_type="recovery.executed.v1",
         )
+
         session.commit()
 
         return ExecuteActionResponse(
@@ -758,21 +829,25 @@ class RecoveryExecutionEngine:
                 },
             )
         )
-        session.add(
-            AuditLog(
-                transaction_id=txn.id,
-                event_type="recovery.scheduled.v1",
-                actor=self.EXECUTOR_ACTOR,
-                reason_codes=["EXPONENTIAL_BACKOFF_SCHEDULED", f"DELAY_{total_delay}S"],
-                metadata_={
-                    "execution_id": execution_id,
-                    "action_type": "DELAYED_RETRY",
-                    "scheduled_at": scheduled_time.isoformat(),
-                    "delay_seconds": total_delay,
-                },
-            )
+        record_audit_event(
+            session=session,
+            transaction_id=txn.id,
+            actor=self.EXECUTOR_ACTOR,
+            action="DELAYED_RETRY_SCHEDULED",
+            before_state="FAILED",
+            after_state="FAILED",
+            policy_version=recovery_case.policy_version,
+            reason_codes=["EXPONENTIAL_BACKOFF_SCHEDULED", f"DELAY_{total_delay}S"],
+            details={
+                "execution_id": execution_id,
+                "action_type": "DELAYED_RETRY",
+                "scheduled_at": scheduled_time.isoformat(),
+                "delay_seconds": total_delay,
+            },
+            event_type="recovery.scheduled.v1",
         )
         session.commit()
+
 
         return ExecuteActionResponse(
             execution_id=execution_id,
@@ -1020,21 +1095,25 @@ class RecoveryExecutionEngine:
                 },
             )
         )
-        session.add(
-            AuditLog(
-                transaction_id=txn.id,
-                event_type="recovery.customer_notified.v1",
-                actor=self.EXECUTOR_ACTOR,
-                reason_codes=[f"NOTIFICATION_SENT_{channel}", "PAYMENT_LINK_GENERATED"],
-                metadata_={
-                    "session_id": str(session_id),
-                    "channel": channel,
-                    "token": token,
-                    "expires_at": expires_at.isoformat(),
-                },
-            )
+        record_audit_event(
+            session=session,
+            transaction_id=txn.id,
+            actor=self.EXECUTOR_ACTOR,
+            action="CUSTOMER_NOTIFICATION_SENT",
+            before_state="FAILED",
+            after_state="FAILED",
+            policy_version="policy.v2",
+            reason_codes=[f"NOTIFICATION_SENT_{channel}", "PAYMENT_LINK_GENERATED"],
+            details={
+                "session_id": str(session_id),
+                "channel": channel,
+                "token": token,
+                "expires_at": expires_at.isoformat(),
+            },
+            event_type="recovery.customer_notified.v1",
         )
         session.commit()
+
 
         return CustomerRecoveryLinkResponse(
             session_id=str(session_id),
@@ -1178,20 +1257,24 @@ class RecoveryExecutionEngine:
                     },
                 )
             )
-            session.add(
-                AuditLog(
-                    transaction_id=txn.id,
-                    event_type="recovery.customer_recovered.v1",
-                    actor="customer_interactive",
-                    reason_codes=["PAYMENT_LINK_COMPLETED", f"METHOD_{payment_method.upper()}"],
-                    metadata_={
-                        "token": token,
-                        "session_id": str(cust_session.id),
-                        "payment_method": payment_method.upper(),
-                        "attempt_number": next_attempt_number,
-                    },
-                )
+            record_audit_event(
+                session=session,
+                transaction_id=txn.id,
+                actor="customer_interactive",
+                action="CUSTOMER_PAYMENT_LINK_CHECKOUT",
+                before_state="FAILED",
+                after_state=TransactionStatus.SUCCEEDED.value,
+                policy_version="policy.v2",
+                reason_codes=["PAYMENT_LINK_COMPLETED", f"METHOD_{payment_method.upper()}"],
+                details={
+                    "token": token,
+                    "session_id": str(cust_session.id),
+                    "payment_method": payment_method.upper(),
+                    "attempt_number": next_attempt_number,
+                },
+                event_type="recovery.customer_recovered.v1",
             )
+
             session.commit()
 
             return CustomerCheckoutSubmitResponse(

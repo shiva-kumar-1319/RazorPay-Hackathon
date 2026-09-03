@@ -29,6 +29,7 @@ from backend.app.models.recovery import (
     Transaction,
     TransactionStatus,
 )
+from backend.app.services.audit_chain import record_audit_event
 from backend.app.schemas.agent import (
     AgentExecutionResult,
     AgentExplanationResult,
@@ -522,12 +523,16 @@ def tool_write_explanation(
     effective_reasons = list(dict.fromkeys(list(policy.reason_codes) + (reason_codes or [])))
     compliance_str = "; ".join(classified.compliance_notes) if classified.compliance_notes else None
 
-    audit_entry = AuditLog(
+    audit_entry = record_audit_event(
+        session=session,
         transaction_id=txn_uuid,
-        event_type="recovery.agent_explanation.v1",
         actor="payment_recovery_agent",
+        action="RECORD_AGENT_EXPLANATION",
+        before_state="FAILED",
+        after_state="FAILED",
+        policy_version=policy.category,
         reason_codes=effective_reasons,
-        metadata_={
+        details={
             "recovery_plan_id": recovery_plan_id,
             "explanation_summary": explanation_summary,
             "customer_message": customer_message,
@@ -536,9 +541,8 @@ def tool_write_explanation(
             "failure_category": policy.category,
             "agent_version": "v1.0.0",
         },
+        event_type="recovery.agent_explanation.v1",
     )
-    session.add(audit_entry)
-    session.flush()
 
     return AgentExplanationResult(
         audit_id=str(audit_entry.id),
@@ -741,6 +745,84 @@ class AgentToolRegistry:
             ],
             handler=tool_write_explanation,
         )
+
+        # Canonical evaluator tool names (strictly bounded, propose-only)
+        self.register_tool(
+            name="inspect_failure",
+            description="Inspect failure code, gateway error message, category, and retry rules.",
+            category="read_only",
+            parameters=[
+                ToolParameterSchema(name="failure_code", type="string", description="Failure code to inspect", required=True),
+            ],
+            handler=lambda session, **kwargs: tool_get_failure_policy(failure_code=kwargs["failure_code"]),
+        )
+        self.register_tool(
+            name="get_customer_context",
+            description="Fetch safe, PII-redacted customer history, behavioral segment, and transaction context.",
+            category="read_only",
+            parameters=[
+                ToolParameterSchema(name="transaction_id", type="string", description="UUID of the transaction", required=True),
+            ],
+            handler=tool_get_transaction_context,
+        )
+        self.register_tool(
+            name="inspect_policy",
+            description="Evaluate deterministic recovery policy, allowed candidate actions, and stop rules.",
+            category="read_only",
+            parameters=[
+                ToolParameterSchema(name="failure_code", type="string", description="Canonical failure code", required=True),
+            ],
+            handler=lambda session, **kwargs: tool_get_failure_policy(failure_code=kwargs["failure_code"]),
+        )
+        self.register_tool(
+            name="get_recovery_predictions",
+            description="Retrieve ML model calibrated success probabilities for candidate recovery actions.",
+            category="read_only",
+            parameters=[
+                ToolParameterSchema(name="transaction_id", type="string", description="UUID of transaction", required=True),
+                ToolParameterSchema(name="failure_code", type="string", description="Failure code", required=False, default=None),
+            ],
+            handler=tool_score_candidates,
+        )
+        self.register_tool(
+            name="score_recovery_actions",
+            description="Score and rank candidate actions by cost-aware net Expected Value (EV).",
+            category="read_only",
+            parameters=[
+                ToolParameterSchema(name="transaction_id", type="string", description="UUID of transaction", required=True),
+                ToolParameterSchema(name="failure_code", type="string", description="Failure code", required=False, default=None),
+                ToolParameterSchema(name="candidate_actions", type="array[string]", description="Candidate actions", required=False, default=None),
+            ],
+            handler=tool_score_candidates,
+        )
+        self.register_tool(
+            name="explain_decision",
+            description="Persist explainable decision narratives for customer, merchant, and compliance.",
+            category="audit",
+            parameters=[
+                ToolParameterSchema(name="transaction_id", type="string", description="UUID of transaction", required=True),
+                ToolParameterSchema(name="recovery_plan_id", type="string", description="Plan ID", required=False, default=None),
+                ToolParameterSchema(name="explanation_summary", type="string", description="Summary", required=True),
+                ToolParameterSchema(name="customer_message", type="string", description="Customer message", required=True),
+                ToolParameterSchema(name="merchant_notes", type="string", description="Merchant notes", required=True),
+                ToolParameterSchema(name="reason_codes", type="array[string]", description="Reason codes", required=False, default=[]),
+            ],
+            handler=tool_write_explanation,
+        )
+        self.register_tool(
+            name="propose_recovery_plan",
+            description="Formulate and propose an approved recovery plan without executing payments.",
+            category="planning",
+            parameters=[
+                ToolParameterSchema(name="transaction_id", type="string", description="UUID of transaction", required=True),
+                ToolParameterSchema(name="chosen_action", type="string", description="Selected ActionType", required=True),
+                ToolParameterSchema(name="confidence_score", type="number", description="Confidence score", required=False, default=0.85),
+                ToolParameterSchema(name="reason_codes", type="array[string]", description="Reason codes", required=False, default=[]),
+                ToolParameterSchema(name="fallback_action", type="string", description="Fallback action", required=False, default=None),
+            ],
+            handler=tool_create_recovery_plan,
+        )
+
 
     def register_tool(
         self,

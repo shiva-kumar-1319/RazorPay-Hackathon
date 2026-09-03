@@ -14,7 +14,7 @@ services:
       redis:
         condition: service_started
     environment:
-      DATABASE_URL: postgresql+psycopg://recoverx:recoverx@postgres:5432/recoverx
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-recoverx}:${POSTGRES_PASSWORD:-recoverx}@postgres:5432/${POSTGRES_DB:-recoverx}
       REDIS_URL: redis://redis:6379/0
       RUN_MIGRATIONS: "true"
       AUTO_CREATE_SCHEMA: "false"
@@ -25,13 +25,12 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_DB: recoverx
-      POSTGRES_USER: recoverx
-      POSTGRES_PASSWORD: recoverx
-    ports:
-      - "5432:5432"
+      POSTGRES_DB: ${POSTGRES_DB:-recoverx}
+      POSTGRES_USER: ${POSTGRES_USER:-recoverx}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-recoverx}
+    # Secure: DB port is not exposed on host network; accessible only via internal bridge network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U recoverx -d recoverx"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-recoverx} -d ${POSTGRES_DB:-recoverx}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -43,8 +42,7 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    ports:
-      - "6379:6379"
+    # Secure: Redis port is not exposed on host network; accessible only via internal bridge network
     networks:
       - recoverx-net
 

@@ -57,13 +57,17 @@ app = FastAPI(
 )
 
 # CORS middleware for merchant dashboard and frontend integrations
+# Enforce secure origin handling (allow_credentials=True requires explicit origins, not wildcard)
+_cors_origins = settings.cors_origins
+_has_wildcard = "*" in _cors_origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_origins=_cors_origins if not _has_wildcard else ["*"],
+    allow_credentials=False if _has_wildcard else True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
+
 
 # Mount static assets
 if STATIC_DIR.exists():
