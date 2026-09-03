@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
 import random
 from typing import Any
-from uuid import uuid4
 
 from backend.app.canonical_failure_taxonomy import CANONICAL_FAILURE_TAXONOMY, CanonicalCategory
 
@@ -78,7 +78,8 @@ def generate_scenarios(count: int = 1000, seed: int = 42) -> list[BenchmarkScena
         _, arch_name, category, failure_code, payment_method, gateway = archetypes[chosen_idx]
 
         txn_id = f"txn_bench_{seed}_{i:05d}"
-        ext_id = f"pay_{uuid4().hex[:12]}"
+        ext_hash = hashlib.sha256(f"pay:{seed}:{i}".encode("utf-8")).hexdigest()[:12]
+        ext_id = f"pay_{ext_hash}"
 
         # Ground truth modeling based on failure characteristics
         if category == "HARD_FAILURE":

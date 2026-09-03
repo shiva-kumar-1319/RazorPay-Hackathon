@@ -9,7 +9,7 @@
 ![Python](https://img.shields.io/badge/Python-3.12-blue?style=flat-square&logo=python)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?style=flat-square&logo=fastapi)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-336791?style=flat-square&logo=postgresql)
-![Tests](https://img.shields.io/badge/Tests-180%20passed-success?style=flat-square)
+![Tests](https://img.shields.io/badge/Tests-183%20passed-success?style=flat-square)
 ![Audit](https://img.shields.io/badge/Evaluator%20Audit-20%2F20-success?style=flat-square)
 
 </div>
@@ -18,30 +18,41 @@
 
 ## What is RecoverX?
 
-RecoverX is an autonomous payment recovery agent that detects failed payments, determines the optimal recovery action using ML-predicted expected value, enforces policy safety guardrails, executes bounded recovery workflows, and measures the actual revenue recovered.
+RecoverX is a **Bounded AI-Assisted Payment Recovery Agent** that detects failed payments, predicts per-action recovery probabilities using calibrated machine learning, selects the optimal intervention via Net Expected Value optimization, enforces deterministic safety policy guardrails, executes bounded recovery workflows, and measures actual revenue recovered.
 
-**It turns payment failures from a write-off into a recoverable revenue opportunity.**
+> **Zero Generative LLM in Core Financial Path**: Recovery decisions are driven by calibrated ML (`GradientBoosting` + isotonic regression) and Net Expected Value math, bound by strict deterministic policy gates. This prevents hallucinations, unbounded loops, or compliance violations on live financial transactions.
 
 ---
 
 ## Results
 
-Benchmark evaluated on 1,000 transactions with a fixed seed — fully reproducible.
+Benchmark evaluated on 1,000 transactions with a fixed seed — 100% reproducible and order-invariant.
 
 | Strategy | Recovery Rate | Net Revenue Recovered | Policy Violations |
 |---|---|---|---|
 | No Action | 0.0% | ₹0 | 0 |
-| Blind Immediate Retry | 11.3% | ₹5,71,877 | **50** |
-| Rule-Based Heuristic | 59.3% | ₹37,34,346 | 0 |
-| **RecoverX** | **59.3%** | **₹37,65,378** | **0** |
+| Blind Immediate Retry | 12.2% | ₹5,93,785 | **50** |
+| Rule-Based Heuristic | 59.0% | ₹37,30,049 | 0 |
+| **RecoverX (Cost-Aware EV Agent)** | **58.3%** | **₹37,77,203** | **0** |
 
-- **+₹31,93,501** net revenue vs blind retry (+559%)
-- **+₹31,032** net revenue vs rule heuristic (cost-awareness advantage)
+- **+₹31,83,418** net revenue vs blind retry (+536%)
+- **+₹47,153** net revenue vs rule heuristic (cost-awareness advantage)
 - **Zero** hard-stop policy violations — fraud and terminal failures are never retried
 
 ```bash
 python -m benchmark.run_benchmark --seed 42 --transactions 1000
 ```
+
+---
+
+## Benchmark Integrity & Fairness
+
+The benchmark framework enforces strict mathematical fairness and causal integrity:
+
+1. **Separation of Hidden Ground Truth & Observable Facts**: The agent and baseline strategies only receive `ObservableFailureEvent` (failure code, category, amount, customer history). They have zero access to `HiddenGroundTruth` (customer willingness, liquid balance, terminal fraud flags).
+2. **Strategy-Fair Deterministic Outcomes**: For any `(seed, scenario_id, action)`, stochastic outcomes are deterministically derived using SHA-256 seed hashing.
+3. **Execution-Order Invariance**: Strategy execution order cannot affect benchmark results. Running RecoverX before or after Blind Retry yields bit-for-bit identical results.
+4. **Reproducibility**: No non-deterministic `uuid4()` calls or unseeded RNGs exist in the benchmark pipeline. Running `--seed 42` produces identical numbers every time.
 
 ---
 
@@ -126,17 +137,17 @@ flowchart LR
     subgraph OTHER["❌ Blind Retry Engine"]
         O1["Payment Fails"] --> O2["Retry Everything"]
         O2 --> O3["50 Hard-Stop Violations\nper 1,000 transactions"]
-        O2 --> O4["11% Recovery Rate"]
-        O2 --> O5["Net Revenue: ₹5.7 L"]
+        O2 --> O4["12.2% Recovery Rate"]
+        O2 --> O5["Net Revenue: ₹5.9 L"]
     end
 
-    subgraph RX["✅ RecoverX"]
+    subgraph RX["✅ RecoverX (AI-Assisted)"]
         R1["Payment Fails"] --> R2["Classify Failure"]
         R2 --> R3{"Hard Failure?"}
         R3 -->|Yes| R4["STOP — zero cost, zero risk"]
         R3 -->|No| R5["ML + EV selects\nbest action per transaction"]
         R5 --> R6["Idempotent Execute"]
-        R6 --> R7["0 Violations\n59% Recovery Rate\nNet Revenue: ₹37.6 L"]
+        R6 --> R7["0 Violations\n58.3% Recovery Rate\nNet Revenue: ₹37.8 L"]
     end
 ```
 

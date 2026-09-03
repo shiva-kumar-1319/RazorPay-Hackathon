@@ -6,7 +6,13 @@
 
 ## 1. Agent Architecture & Paradigm
 
-RecoverX operates a **Bounded ReAct (Reasoning + Action) Autonomous Agent** (`PaymentRecoveryAgent`) designed specifically for payment failure remediation. Unlike unbounded open-ended conversational agents, RecoverX enforces strict determinism, bounded execution steps, and non-bypassable policy guardrails.
+RecoverX operates a **Bounded AI-Assisted Payment Recovery Agent** (`PaymentRecoveryAgent`) designed specifically for payment failure remediation. Unlike unbounded open-ended conversational agents or generative LLMs, RecoverX enforces strict determinism, bounded execution steps, and non-bypassable policy guardrails.
+
+* **ML Model**: Provides calibrated recovery-success probability prediction (`GradientBoostingClassifier` + `CalibratedClassifierCV` isotonic).
+* **Decision Engine**: Maximizes Net Expected Value ($EV$).
+* **Bounded Orchestrator**: Executes a deterministic multi-step tool workflow with a strict 6-step budget.
+* **Policy Guardrails**: Enforces non-bypassable stopping rules and immediate hard stops.
+* **Core Execution**: Does not rely on a generative LLM in the financial transaction path.
 
 ```
 Incoming Failure Event 
@@ -36,7 +42,7 @@ Incoming Failure Event
 
 ## 2. Hard Step Budget & Termination Guarantees
 
-1. **Maximum Step Budget**: The agent is bounded to a maximum of **6 discrete ReAct steps** per investigation cycle.
+1. **Maximum Step Budget**: The agent is bounded to a maximum of **6 discrete execution steps** per investigation cycle.
 2. **Infinite Loop Prevention**: The agent cannot loop indefinitely or re-invoke tools recursively.
 3. **Deterministic Early Stopping**: If Step 2 classifies the failure as `HARD_FAILURE` (e.g. `FRAUD_REJECTED`, `STOLEN_CARD`, `INVALID_ACCOUNT_NUMBER`), the agent **aborts immediately**, skips steps 3–5, and transitions directly to Step 6 to log the refusal.
 4. **Latency Budget**: Mean agent trajectory execution latency is strictly `< 50ms`.

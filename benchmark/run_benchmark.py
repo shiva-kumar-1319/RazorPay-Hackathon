@@ -26,6 +26,7 @@ def run_benchmark(
     num_transactions: int = 1000,
     output_path: str | None = None,
     verbose: bool = True,
+    strategies: list[BaseRecoveryStrategy] | None = None,
 ) -> BenchmarkEvaluationReport:
     """Run full reproducible benchmark comparing No Action, Blind Retry, Heuristics, and RecoverX."""
     if verbose:
@@ -43,12 +44,13 @@ def run_benchmark(
 
     # 2. Instantiate simulator and strategies
     simulator = PaymentEnvironmentSimulator(seed=seed)
-    strategies: list[BaseRecoveryStrategy] = [
-        NoActionBaseline(),
-        BlindImmediateRetry(),
-        RuleHeuristicBaseline(),
-        RecoverXAgent(),
-    ]
+    if strategies is None:
+        strategies = [
+            NoActionBaseline(),
+            BlindImmediateRetry(),
+            RuleHeuristicBaseline(),
+            RecoverXAgent(),
+        ]
 
     metrics_map = {}
     raw_results_summary = {}
@@ -69,22 +71,29 @@ def run_benchmark(
         }
 
     # 3. Compute comparative lift summary
-    no_act = metrics_map[NoActionBaseline.name]
-    blind = metrics_map[BlindImmediateRetry.name]
-    heur = metrics_map[RuleHeuristicBaseline.name]
-    rx = metrics_map[RecoverXAgent.name]
+    no_act = metrics_map.get(NoActionBaseline.name)
+    blind = metrics_map.get(BlindImmediateRetry.name)
+    heur = metrics_map.get(RuleHeuristicBaseline.name)
+    rx = metrics_map.get(RecoverXAgent.name)
 
-    rx_lift_vs_blind = round(rx.net_revenue_recovered_inr - blind.net_revenue_recovered_inr, 2)
-    rx_lift_vs_heur = round(rx.net_revenue_recovered_inr - heur.net_revenue_recovered_inr, 2)
+    comparative: dict[str, Any] = {}
+    if rx and blind:
+        rx_lift_vs_blind = round(rx.net_revenue_recovered_inr - blind.net_revenue_recovered_inr, 2)
+        comparative["recoverx_net_revenue_lift_vs_blind_inr"] = rx_lift_vs_blind
+        comparative["blind_retry_hard_stop_violations"] = blind.hard_stop_violations
+    else:
+        rx_lift_vs_blind = 0.0
 
-    comparative = {
-        "recoverx_net_revenue_lift_vs_blind_inr": rx_lift_vs_blind,
-        "recoverx_net_revenue_lift_vs_heuristic_inr": rx_lift_vs_heur,
-        "recoverx_hard_stop_violations": rx.hard_stop_violations,
-        "blind_retry_hard_stop_violations": blind.hard_stop_violations,
-        "is_recoverx_optimal": rx.net_revenue_recovered_inr >= heur.net_revenue_recovered_inr,
-        "is_safety_invariant_held": rx.hard_stop_violations == 0,
-    }
+    if rx and heur:
+        rx_lift_vs_heur = round(rx.net_revenue_recovered_inr - heur.net_revenue_recovered_inr, 2)
+        comparative["recoverx_net_revenue_lift_vs_heuristic_inr"] = rx_lift_vs_heur
+        comparative["is_recoverx_optimal"] = rx.net_revenue_recovered_inr >= heur.net_revenue_recovered_inr
+    else:
+        rx_lift_vs_heur = 0.0
+
+    if rx:
+        comparative["recoverx_hard_stop_violations"] = rx.hard_stop_violations
+        comparative["is_safety_invariant_held"] = rx.hard_stop_violations == 0
 
     report = BenchmarkEvaluationReport(
         seed=seed,

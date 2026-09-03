@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
 import random
+import struct
 from typing import Any
 
 from backend.app.models.recovery import ActionType
@@ -21,6 +23,17 @@ ACTION_COST_SPECS: dict[str, tuple[float, float]] = {
     "STOP_RECOVERY": (0.00, 0.00),
 }
 
+
+def derive_action_seed(global_seed: int, scenario_id: str, action_type: str) -> int:
+    """Deterministically derive a 64-bit integer seed for a (scenario, action) pair.
+    
+    This guarantees that every strategy evaluated against the same scenario and
+    choosing the same action receives the EXACT same stochastic environment outcome,
+    completely invariant to the order of strategy execution.
+    """
+    key = f"{global_seed}:{scenario_id}:{action_type.strip().upper()}".encode("utf-8")
+    digest = hashlib.sha256(key).digest()
+    return struct.unpack(">Q", digest[:8])[0]
 
 
 @dataclass(frozen=True)
@@ -44,17 +57,24 @@ class PaymentEnvironmentSimulator:
     """Simulates real payment rail and customer responses based on hidden ground truth physics."""
 
     def __init__(self, seed: int = 42) -> None:
-        self.rng = random.Random(seed)
+        self.seed = seed
 
     def evaluate_action(
         self,
         scenario: BenchmarkScenarioItem,
         chosen_action: str,
     ) -> SimulationStepResult:
-        """Step the environment forward given the chosen recovery action and hidden ground truth."""
+        """Step the environment forward given the chosen recovery action and hidden ground truth.
+        
+        Outcomes are deterministically derived from (self.seed, scenario.scenario_id, action),
+        ensuring perfect fairness across strategies and complete invariance to execution order.
+        """
         norm_action = chosen_action.strip().upper()
         hidden: HiddenGroundTruth = scenario.hidden_truth
         obs: ObservableFailureEvent = scenario.observable
+
+        action_seed = derive_action_seed(self.seed, scenario.scenario_id, norm_action)
+        rng = random.Random(action_seed)
 
         # 1. Terminal / Hard Failure Invariant Check
         if hidden.is_terminal_fraud_or_hotlisted:
@@ -70,7 +90,7 @@ class PaymentEnvironmentSimulator:
                     execution_cost=cost,
                     friction_cost=friction,
                     net_revenue_recovered=-(cost + friction),
-                    latency_ms=self.rng.randint(350, 900),
+                    latency_ms=rng.randint(350, 900),
                     hard_stop_violation=True,
                     status="COMPLIANCE_VIOLATION",
                     details={"reason": "Attempted recovery on terminal hotlisted/fraud decline."},
@@ -110,9 +130,8 @@ class PaymentEnvironmentSimulator:
         exec_cost = cost_cfg[0]
         friction_cost = round(0.01 * obs.amount * cost_cfg[1], 2)
 
-
         # 3. Simulate outcome grounded in payment rail physics & customer willingness
-        roll = self.rng.random()
+        roll = rng.random()
         recovered = False
 
         if norm_action == "RETRY_SAME_METHOD":
@@ -151,7 +170,7 @@ class PaymentEnvironmentSimulator:
 
         recovered_amt = obs.amount if recovered else 0.0
         net_rev = recovered_amt - exec_cost - friction_cost
-        latency = self.rng.randint(200, 750) if recovered else self.rng.randint(300, 1200)
+        latency = rng.randint(200, 750) if recovered else rng.randint(300, 1200)
 
         return SimulationStepResult(
             action_type=norm_action,
