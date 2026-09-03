@@ -128,3 +128,17 @@ def test_recoverx_net_revenue_lift_over_blind_retry():
     assert rx.net_revenue_recovered_inr > blind.net_revenue_recovered_inr
     net_lift = rx.net_revenue_recovered_inr - blind.net_revenue_recovered_inr
     assert net_lift > 50000.0
+
+
+def test_recoverx_net_revenue_and_cost_efficiency_superiority_over_rule_heuristic():
+    """Invariant: RecoverX achieves higher net revenue and cost efficiency than Rule Heuristic even with lower raw recovery rate."""
+    report = run_benchmark(seed=42, num_transactions=1000, verbose=False)
+    rx = report.strategies[RecoverXAgent.name]
+    heur = report.strategies[RuleHeuristicBaseline.name]
+
+    # Verify intentional trade-off: RecoverX optimizes Net EV, not raw recovery volume
+    assert rx.recovery_rate_pct <= heur.recovery_rate_pct
+    assert rx.net_revenue_recovered_inr > heur.net_revenue_recovered_inr
+    assert rx.cost_efficiency_ratio > heur.cost_efficiency_ratio
+    assert rx.hard_stop_violations == 0
+

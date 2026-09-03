@@ -35,13 +35,27 @@ Benchmark evaluated on 1,000 transactions with a fixed seed — 100% reproducibl
 | Rule-Based Heuristic | 59.0% | ₹37,30,049 | 0 |
 | **RecoverX (Cost-Aware EV Agent)** | **58.3%** | **₹37,77,203** | **0** |
 
+> **Why 58.3% beats 59.0%**: RecoverX intentionally trades a small amount of raw recovery volume (-0.7pp) for lower execution cost and zero policy violations, netting **+₹47,153 more actual revenue** and +2.5% higher cost efficiency.
+
 - **+₹31,83,418** net revenue vs blind retry (+536%)
 - **+₹47,153** net revenue vs rule heuristic (cost-awareness advantage)
 - **Zero** hard-stop policy violations — fraud and terminal failures are never retried
 
 ```bash
-python -m benchmark.run_benchmark --seed 42 --transactions 1000
+python -m benchmark.run_benchmark --seed 42 --transactions 1000 --explain
 ```
+
+### Performance & Scale (Empirically Measured)
+
+*Measured on local development machine using `python benchmark/perf_benchmark.py` (see [docs/performance.md](docs/performance.md)):*
+
+| Metric | p50 (Median) | p95 | p99 | SLA Target |
+|---|---|---|---|---|
+| **ML Inference (`score_recovery_candidates`)** | **13.06 ms** | 15.41 ms | 15.87 ms | < 20.0 ms |
+| **Agent Trajectory (`investigate_transaction`, 6 steps)** | **21.89 ms** | 25.38 ms | 63.61 ms | < 50.0 ms |
+
+- **Sustained Throughput**: **83.6 txns/sec** at 1,000 concurrent events (100% evaluation completion).
+- **Sub-25ms Median Decision**: Zero generative LLM overhead in the financial transaction path enables real-time checkout remediation.
 
 ---
 
@@ -168,9 +182,18 @@ flowchart TD
     S5 --> S6
 
     ABORT --> S6
-    S6["Step 6: write_explanation\n→ plain-language summary\n→ appended to SHA-256 audit chain\n→ linked to previous hash"]
+    S6["Step 6: write_explanation\n→ multi-stakeholder narrative\n→ optional Gemini synthesis\n→ appended to SHA-256 audit chain"]
     S6 --> END(["AgentInvestigationResponse returned"])
 ```
+
+### Gemini Integration (Explanation Layer Only)
+
+> **Core Guarantee**: Gemini is used exclusively for multi-stakeholder explanation generation at Step 6; the recovery decision itself is 100% deterministic ML + EV.
+
+- **Zero LLM in Financial Decision Path**: Action selection, policy enforcement, Net EV maximization, and execution guards execute with 0 generative tokens.
+- **Post-Decision Narrative Synthesis**: When `USE_LLM_EXPLANATIONS=true` and `GEMINI_API_KEY` is set, Gemini synthesizes clear executive summaries for the merchant dashboard and friendly SMS/WhatsApp notifications for the customer.
+- **Strict 3.0s Timeout & Deterministic Fallback**: Any network delay, timeout, or missing key instantly falls back to deterministic templates without impacting transaction flow.
+- **Cryptographic Audit Provenance**: The SHA-256 audit ledger explicitly tags `explanation_source: "llm"` vs `"template"`.
 
 ---
 
@@ -351,9 +374,10 @@ pytest tests/ -q
 
 ## Scope and Design Decisions
 
-- **Simulated execution**: Recovery actions execute against `PaymentEnvironmentSimulator`. No real payment gateway is connected.
-- **Synthetic ML training data**: The model is trained on domain-knowledge-derived synthetic labels. It has not been validated on live payment data.
-- **Demo authentication**: API keys are hardcoded for evaluation. Production deployment requires a proper secrets manager and key rotation.
+- **Gateway integration**: Dual-mode via `PaymentGatewayAdapter`. Defaults to `SimulatedGatewayAdapter` for offline benchmarks; supports `RazorpayTestModeAdapter` for official Razorpay sandbox test-mode API integration. See [docs/gateway_integration.md](docs/gateway_integration.md).
+- **Synthetic ML training data**: Internally calibrated on synthetic data (Expected Calibration Error 0.034 across 5-fold CV); not yet validated against live recovery outcomes. See [docs/model_calibration.md](docs/model_calibration.md).
+- **Authentication & Secrets Handling**: Environment-injected credentials loaded via `pydantic-settings` with fail-fast startup verification. Key rotation and KMS envelope encryption are production roadmap items. See [docs/SECURITY.md](docs/SECURITY.md).
+- **Gemini LLM narrative layer**: Synthesizes plain-English merchant summaries and customer notification copy downstream of decisions at Step 6. Zero LLM influence in the core financial path.
 - **Prototype grade**: Not PCI-DSS certified or RBI-compliant. This demonstrates the architecture, decision logic, and measurement methodology.
 
 ---

@@ -268,18 +268,27 @@ class PaymentRecoveryAgent:
                 exec_disposition = "REFUSED"
 
         # --------------------------------------------------------------------
-        # STEP 6: Write Explainable Audit Trail
+        # STEP 6: Write Explainable Audit Trail (with optional Gemini narration)
         # --------------------------------------------------------------------
-        narrative_summary = (
-            f"Agent selected {chosen_action_type} as the optimal recovery path for {effective_failure_code} "
-            f"({category}). ML model predicted {predicted_prob:.1%} success rate, yielding net Expected Value "
-            f"₹{best_ev:.2f}. Execution disposition: {exec_disposition}."
+        from backend.app.services.gemini_explainer import (
+            ExplanationContext,
+            generate_recovery_explanation,
         )
 
-        merchant_notes = (
-            f"Root cause: {merchant_log}. Recommended {chosen_action_type} via channel '{best_action.get('channel', 'system')}'. "
-            f"Estimated cost ₹{best_action.get('execution_cost', 0):.2f}, friction penalty ₹{best_action.get('friction_penalty', 0):.2f}."
+        expl_ctx = ExplanationContext(
+            transaction_id=str(txn_uuid),
+            amount=float(txn_ctx.get("amount", 0.0)),
+            currency=str(txn_ctx.get("currency", "INR")),
+            failure_code=effective_failure_code,
+            failure_category=category,
+            chosen_action=chosen_action_type,
+            predicted_probability=predicted_prob,
+            net_expected_value=best_ev,
+            merchant_log=merchant_log,
+            customer_default_message=customer_expl,
+            execution_disposition=exec_disposition,
         )
+        expl_res = generate_recovery_explanation(expl_ctx)
 
         explain_res = _execute_step(
             thought="Persist comprehensive audit explanation with customer and merchant narratives.",
@@ -287,10 +296,11 @@ class PaymentRecoveryAgent:
             arguments={
                 "transaction_id": str(txn_uuid),
                 "recovery_plan_id": recovery_plan_obj.recovery_plan_id if recovery_plan_obj else None,
-                "explanation_summary": narrative_summary,
-                "customer_message": customer_expl,
-                "merchant_notes": merchant_notes,
+                "explanation_summary": expl_res.narrative_summary,
+                "customer_message": expl_res.customer_message,
+                "merchant_notes": expl_res.merchant_notes,
                 "reason_codes": policy_data.get("reason_codes", []) + ["AGENT_DECISION_FINAL"],
+                "explanation_source": expl_res.explanation_source,
             },
         )
         if explain_res.success and explain_res.data.get("audit_id"):
@@ -341,8 +351,8 @@ class PaymentRecoveryAgent:
             expected_value=best_ev,
             predicted_probability=predicted_prob,
             execution_disposition=exec_disposition,
-            customer_explanation=customer_expl,
-            merchant_explanation=merchant_notes,
+            customer_explanation=expl_res.customer_message,
+            merchant_explanation=expl_res.merchant_notes,
             compliance_notes=compliance_advisory,
             recovery_plan=recovery_plan_obj,
             steps=steps,

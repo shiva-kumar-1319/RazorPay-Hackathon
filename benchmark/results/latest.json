@@ -16,7 +16,10 @@
       "hard_stop_violations": 0,
       "hard_stop_violation_rate_pct": 0.0,
       "mean_latency_ms": 10,
-      "p95_latency_ms": 10.0
+      "p95_latency_ms": 10.0,
+      "total_recovery_attempts": 0,
+      "net_revenue_per_recovery_attempt": 0.0,
+      "cost_efficiency_ratio": 0.0
     },
     "Blind Immediate Retry": {
       "strategy_name": "Blind Immediate Retry",
@@ -32,7 +35,10 @@
       "hard_stop_violations": 50,
       "hard_stop_violation_rate_pct": 5.0,
       "mean_latency_ms": 699.4,
-      "p95_latency_ms": 1143.0
+      "p95_latency_ms": 1143.0,
+      "total_recovery_attempts": 1000,
+      "net_revenue_per_recovery_attempt": 593.78,
+      "cost_efficiency_ratio": 4867.09
     },
     "Rule-Based Heuristic": {
       "strategy_name": "Rule-Based Heuristic",
@@ -48,7 +54,10 @@
       "hard_stop_violations": 0,
       "hard_stop_violation_rate_pct": 0.0,
       "mean_latency_ms": 557.9,
-      "p95_latency_ms": 1105.0
+      "p95_latency_ms": 1105.0,
+      "total_recovery_attempts": 950,
+      "net_revenue_per_recovery_attempt": 3926.37,
+      "cost_efficiency_ratio": 6654.86
     },
     "RecoverX (Cost-Aware EV Agent)": {
       "strategy_name": "RecoverX (Cost-Aware EV Agent)",
@@ -64,7 +73,10 @@
       "hard_stop_violations": 0,
       "hard_stop_violation_rate_pct": 0.0,
       "mean_latency_ms": 556.1,
-      "p95_latency_ms": 1086.0
+      "p95_latency_ms": 1086.0,
+      "total_recovery_attempts": 950,
+      "net_revenue_per_recovery_attempt": 3976.0,
+      "cost_efficiency_ratio": 6819.9
     }
   },
   "comparative_summary": {

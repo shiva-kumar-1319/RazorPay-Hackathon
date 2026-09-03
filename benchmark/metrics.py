@@ -25,6 +25,9 @@ class StrategyMetrics:
     hard_stop_violation_rate_pct: float
     mean_latency_ms: float
     p95_latency_ms: float
+    total_recovery_attempts: int = 0
+    net_revenue_per_recovery_attempt: float = 0.0
+    cost_efficiency_ratio: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -65,6 +68,9 @@ def compute_benchmark_metrics(
             hard_stop_violation_rate_pct=0.0,
             mean_latency_ms=0.0,
             p95_latency_ms=0.0,
+            total_recovery_attempts=0,
+            net_revenue_per_recovery_attempt=0.0,
+            cost_efficiency_ratio=0.0,
         )
 
     recovered = sum(1 for r in results if r.recovered)
@@ -74,6 +80,9 @@ def compute_benchmark_metrics(
     fric_cost = sum(r.friction_cost for r in results)
     net_rev = sum(r.net_revenue_recovered for r in results)
     violations = sum(1 for r in results if r.hard_stop_violation)
+    total_attempts = sum(1 for r in results if r.action_type != "STOP_RECOVERY")
+    if total_attempts == 0 and n > 0 and strategy_name != "No Action (Zero Recovery)":
+        total_attempts = n
 
     latencies = sorted(r.latency_ms for r in results)
     mean_lat = round(statistics.mean(latencies), 1) if latencies else 0.0
@@ -83,6 +92,11 @@ def compute_benchmark_metrics(
     rec_rate = round((recovered / n) * 100, 2)
     violation_rate = round((violations / n) * 100, 2)
     cost_per_rec = round(exec_cost / recovered, 2) if recovered > 0 else 0.0
+
+    # Derived metrics: net revenue per recovery attempt & cost efficiency ratio
+    net_rev_per_attempt = round(net_rev / total_attempts, 2) if total_attempts > 0 else 0.0
+    eff_denom = (rec_rate / 100.0) * total_attempts if total_attempts > 0 else 0.0
+    cost_eff = round(net_rev / eff_denom, 2) if eff_denom > 0 else 0.0
 
     return StrategyMetrics(
         strategy_name=strategy_name,
@@ -99,4 +113,7 @@ def compute_benchmark_metrics(
         hard_stop_violation_rate_pct=violation_rate,
         mean_latency_ms=mean_lat,
         p95_latency_ms=p95_lat,
+        total_recovery_attempts=total_attempts,
+        net_revenue_per_recovery_attempt=net_rev_per_attempt,
+        cost_efficiency_ratio=cost_eff,
     )

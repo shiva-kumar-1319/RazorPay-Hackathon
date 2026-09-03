@@ -27,6 +27,7 @@ def run_benchmark(
     output_path: str | None = None,
     verbose: bool = True,
     strategies: list[BaseRecoveryStrategy] | None = None,
+    explain: bool = False,
 ) -> BenchmarkEvaluationReport:
     """Run full reproducible benchmark comparing No Action, Blind Retry, Heuristics, and RecoverX."""
     if verbose:
@@ -117,6 +118,21 @@ def run_benchmark(
         print(f"* RecoverX Net Revenue vs Rule Heuristic:  +INR {rx_lift_vs_heur:,.2f}")
         print(f"* RecoverX Hard-Stop Violations:           {rx.hard_stop_violations} (Invariant: ZERO)")
         print(f"* Blind Retry Hard-Stop Violations:        {blind.hard_stop_violations} (Policy Failures)")
+
+        print("\n[COMPARATIVE STRATEGY ANALYSIS (vs RecoverX)]")
+        for name, m in metrics_map.items():
+            if name == RecoverXAgent.name:
+                continue
+            rate_diff = rx.recovery_rate_pct - m.recovery_rate_pct
+            rev_diff = rx.net_revenue_recovered_inr - m.net_revenue_recovered_inr
+            eff_pct = ((rx.cost_efficiency_ratio - m.cost_efficiency_ratio) / m.cost_efficiency_ratio * 100) if m.cost_efficiency_ratio > 0 else 0.0
+            print(f"* RecoverX vs {name}: {rate_diff:+.1f}pp recovery rate, {rev_diff:+,.0f} net revenue, {eff_pct:+.1f}% cost efficiency")
+
+        if explain:
+            print("\n[RECOVERX STRATEGY TRADE-OFF RATIONALE]")
+            print("RecoverX intentionally trades a small amount of raw recovery volume for lower")
+            print("execution cost and zero policy violations, netting more actual revenue.")
+            print("By maximizing Net Expected Value rather than raw volume, RecoverX optimizes capital efficiency.")
         print("=" * 88 + "\n")
 
     # 5. Persist JSON artifact if requested
@@ -138,6 +154,7 @@ def main() -> None:
     parser.add_argument("--transactions", type=int, default=1000, help="Number of failure transactions (default: 1000)")
     parser.add_argument("--output", type=str, default="benchmark/results/latest.json", help="Output JSON path")
     parser.add_argument("--quiet", action="store_true", help="Suppress console stdout")
+    parser.add_argument("--explain", action="store_true", help="Print plain-English rationale for strategy trade-offs")
     args = parser.parse_args()
 
     run_benchmark(
@@ -145,6 +162,7 @@ def main() -> None:
         num_transactions=args.transactions,
         output_path=args.output,
         verbose=not args.quiet,
+        explain=args.explain,
     )
 
 

@@ -46,7 +46,18 @@ Every automated state transition and recovery decision is recorded with a crypto
 
 ---
 
-## 5. Network & Infrastructure Security
+## 5. Secrets Handling & Key Management
+
+RecoverX strictly adheres to modern 12-factor configuration principles for all sensitive credentials:
+- **Environment-Based Injection**: Zero API keys, gateway tokens, or model credentials are hardcoded in source code or tracked in version control. All configuration is loaded dynamically via `pydantic-settings` from environment variables or local `.env`.
+- **Fail-Fast Validation**: The application startup sequence (`backend/app/main.py`) validates the presence and structure of required credentials for active features (`USE_LIVE_GATEWAY`, `USE_LLM_EXPLANATIONS`, and production merchant auth), immediately halting startup with explicit error diagnostics if required keys are missing.
+- **Git Hygiene**: The `.env` file is strictly listed in `.gitignore` and never committed. Only `.env.example` with non-functional placeholder values is tracked in the repository.
+- **Automated Regression Guard**: A dedicated test in `tests/security/test_security.py` scans all Python files in the repository to permanently prevent hardcoded credentials or API key patterns from ever being committed.
+- **Production Roadmap**: While environment-based secret injection protects credentials from source leaks, automated secrets rotation, KMS envelope encryption, and HashiCorp Vault / AWS Secrets Manager integrations represent ongoing production deliverables (production TODO).
+
+---
+
+## 6. Network & Infrastructure Security
 
 - **Database Isolation**: In `docker-compose.yml`, internal storage services (PostgreSQL, Redis) are isolated on an internal bridge network (`recoverx-net`) without exposed host ports.
 - **CORS Protection**: Cross-Origin Resource Sharing restricts allowed origins to explicit frontend domains and forbids credentials on wildcard origins.
@@ -54,6 +65,7 @@ Every automated state transition and recovery decision is recorded with a crypto
 
 ---
 
-## 6. Vulnerability Disclosure
+## 7. Vulnerability Disclosure
 
 If you discover a security vulnerability, please submit a report with reproduction steps to the repository maintainers.
+

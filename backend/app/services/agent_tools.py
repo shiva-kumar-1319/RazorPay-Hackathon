@@ -511,6 +511,7 @@ def tool_write_explanation(
     customer_message: str,
     merchant_notes: str,
     reason_codes: list[str] | None = None,
+    explanation_source: str = "template",
 ) -> AgentExplanationResult:
     """Record a structured, multi-stakeholder explanation and immutable audit log."""
     txn_uuid = UUID(str(transaction_id)) if isinstance(transaction_id, str) else transaction_id
@@ -540,6 +541,7 @@ def tool_write_explanation(
             "compliance_advisory": compliance_str,
             "failure_category": policy.category,
             "agent_version": "v1.0.0",
+            "explanation_source": explanation_source,
         },
         event_type="recovery.agent_explanation.v1",
     )
@@ -553,6 +555,7 @@ def tool_write_explanation(
         compliance_advisory=compliance_str,
         reason_codes=effective_reasons,
         recorded_at=audit_entry.created_at.isoformat() if audit_entry.created_at else datetime.now(timezone.utc).isoformat(),
+        explanation_source=explanation_source,
     )
 
 
@@ -741,6 +744,13 @@ class AgentToolRegistry:
                     description="Deterministic reason codes",
                     required=False,
                     default=[],
+                ),
+                ToolParameterSchema(
+                    name="explanation_source",
+                    type="string",
+                    description="Provenance of the narrative explanation ('llm' or 'template')",
+                    required=False,
+                    default="template",
                 ),
             ],
             handler=tool_write_explanation,

@@ -50,6 +50,7 @@ from backend.app.schemas.execution import (
 )
 from backend.app.schemas.failure import FailureClassificationRequest
 from backend.app.services.failure_intelligence import failure_intelligence_service
+from backend.app.services.gateway_adapter import get_gateway_adapter
 from backend.app.services.recovery_policy import evaluate_failure_policy
 from backend.app.simulator.constants import (
     FAILURE_CATALOG,
@@ -405,14 +406,17 @@ class RecoveryExecutionEngine:
         correlation_id = uuid4()
         now = datetime.now(timezone.utc)
 
-        # Determine outcome: Transient network/timeout issues have 80% resolution probability
-        if force_outcome:
-            is_success = force_outcome.upper() == "SUCCESS"
-        else:
-            is_success = random.random() < 0.80
-
+        # Determine outcome through payment gateway adapter
+        adapter = get_gateway_adapter()
+        gw_result = adapter.retry_payment(
+            transaction_id=str(txn.id),
+            payment_method=current_method,
+            amount=float(txn.amount),
+            force_outcome=force_outcome,
+        )
+        is_success = gw_result.is_success
+        latency_ms = gw_result.latency_ms
         instrument_meta = _generate_masked_instrument(current_method)
-        latency_ms = random.randint(220, 850)
 
         if is_success:
             # Success Path
@@ -614,13 +618,16 @@ class RecoveryExecutionEngine:
         if "vpa" in params and target_method == "UPI":
             instrument_meta["vpa_handle"] = params["vpa"]
 
-        # Switching away from bad instrument has high success rate (88%)
-        if force_outcome:
-            is_success = force_outcome.upper() == "SUCCESS"
-        else:
-            is_success = random.random() < 0.88
-
-        latency_ms = random.randint(190, 780)
+        # Determine outcome through payment gateway adapter
+        adapter = get_gateway_adapter()
+        gw_result = adapter.retry_payment(
+            transaction_id=str(txn.id),
+            payment_method=target_method,
+            amount=float(txn.amount),
+            force_outcome=force_outcome,
+        )
+        is_success = gw_result.is_success
+        latency_ms = gw_result.latency_ms
 
         if is_success:
             new_attempt = PaymentAttempt(
@@ -1022,7 +1029,16 @@ class RecoveryExecutionEngine:
         expires_at = now + timedelta(minutes=expires_in_minutes)
         token = f"rec_{secrets.token_urlsafe(16)}"
         session_id = uuid4()
-        checkout_url = f"https://pay.recoverx.io/pay/{token}"
+        adapter = get_gateway_adapter()
+        link_gw = adapter.create_payment_link(
+            amount=float(txn.amount),
+            customer_name=txn.customer.name if (txn.customer and txn.customer.name) else "Valued Customer",
+            customer_email=txn.customer.email if txn.customer else None,
+            customer_phone=txn.customer.phone if txn.customer else None,
+            description=f"RecoverX Payment Link for order {txn.external_transaction_id}",
+            reference_id=token,
+        )
+        checkout_url = link_gw.short_url
 
         # Resolve recovery action if not specified
         act_uuid = UUID(str(recovery_action_id)) if recovery_action_id else None

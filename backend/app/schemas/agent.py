@@ -221,6 +221,7 @@ class AgentExplanationResult(BaseModel):
     compliance_advisory: str | None = None
     reason_codes: list[str]
     recorded_at: str
+    explanation_source: str = "template"
 
 
 # ============================================================================

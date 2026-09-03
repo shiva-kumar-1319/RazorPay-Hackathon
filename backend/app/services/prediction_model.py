@@ -467,9 +467,18 @@ class _PureNumpyGBM:
 class RecoveryPredictionModel:
     """GradientBoosting classifier predicting P(successful recovery) per action.
 
-    Bootstraps from synthetic data on initialization.  Thread-safe after training
+    Bootstraps from synthetic data on initialization. Thread-safe after training
     completes (the fitted estimator is read-only).
+    
+    Label Provenance:
+    Trained strictly on domain-knowledge-derived synthetic labels; internally
+    calibrated via isotonic regression. Not yet validated against live recovery outcomes.
     """
+
+    label_provenance: str = (
+        "Trained strictly on domain-knowledge-derived synthetic labels; internally "
+        "calibrated via isotonic regression. Not yet validated against observed live recovery outcomes."
+    )
 
     def __init__(self) -> None:
         self._model: Any = None
@@ -566,9 +575,84 @@ class RecoveryPredictionModel:
         """Return evaluation metrics from the last training run."""
         return {
             "is_trained": self._is_trained,
+            "label_provenance": self.label_provenance,
             **self._metrics,
             "feature_count": len(FEATURE_NAMES),
             "feature_names": FEATURE_NAMES,
+        }
+
+    def evaluate_cross_validation_calibration(
+        self,
+        n_splits: int = 5,
+        n_samples: int = 3000,
+        seed: int = 42,
+    ) -> dict[str, Any]:
+        """Perform k-fold CV calibration evaluation reporting Brier score and reliability curves."""
+        from sklearn.metrics import brier_score_loss
+        from sklearn.calibration import calibration_curve
+        from sklearn.model_selection import StratifiedKFold
+
+        X, y = generate_synthetic_training_data(n_samples=n_samples, seed=seed)
+        skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=seed)
+
+        fold_briers = []
+        fold_aucs = []
+        fold_accuracies = []
+        oof_preds = np.zeros(len(y))
+        oof_probas = np.zeros(len(y))
+
+        for train_idx, val_idx in skf.split(X, y):
+            X_tr, y_tr = X[train_idx], y[train_idx]
+            X_val, y_val = X[val_idx], y[val_idx]
+
+            base = GradientBoostingClassifier(
+                n_estimators=100,
+                learning_rate=0.1,
+                max_depth=4,
+                random_state=seed,
+            )
+            cal = CalibratedClassifierCV(base, cv=3, method="isotonic")
+            cal.fit(X_tr, y_tr)
+
+            val_proba = cal.predict_proba(X_val)[:, 1]
+            val_pred = (val_proba >= 0.5).astype(int)
+
+            oof_probas[val_idx] = val_proba
+            oof_preds[val_idx] = val_pred
+
+            fold_briers.append(float(brier_score_loss(y_val, val_proba)))
+            fold_aucs.append(float(roc_auc_score(y_val, val_proba)))
+            fold_accuracies.append(float(accuracy_score(y_val, val_pred)))
+
+        overall_brier = float(brier_score_loss(y, oof_probas))
+        overall_auc = float(roc_auc_score(y, oof_probas))
+        overall_acc = float(accuracy_score(y, oof_preds))
+
+        # Compute calibration curve bins (10 bins)
+        prob_true, prob_pred = calibration_curve(y, oof_probas, n_bins=10, strategy="uniform")
+        reliability_bins = [
+            {
+                "bin_idx": i + 1,
+                "mean_predicted_probability": round(float(pred_p), 4),
+                "empirical_recovery_rate": round(float(true_p), 4),
+                "calibration_gap": round(abs(float(true_p) - float(pred_p)), 4),
+            }
+            for i, (true_p, pred_p) in enumerate(zip(prob_true, prob_pred))
+        ]
+        ece = round(float(np.mean([b["calibration_gap"] for b in reliability_bins])), 4) if reliability_bins else 0.0
+
+        return {
+            "label_provenance": self.label_provenance,
+            "n_splits": n_splits,
+            "n_samples": n_samples,
+            "brier_score_mean": round(float(np.mean(fold_briers)), 4),
+            "brier_score_std": round(float(np.std(fold_briers)), 4),
+            "brier_score_overall": round(overall_brier, 4),
+            "auc_mean": round(float(np.mean(fold_aucs)), 4),
+            "auc_overall": round(overall_auc, 4),
+            "accuracy_mean": round(float(np.mean(fold_accuracies)), 4),
+            "expected_calibration_error": ece,
+            "reliability_bins": reliability_bins,
         }
 
     @property

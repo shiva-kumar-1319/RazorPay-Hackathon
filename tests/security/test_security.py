@@ -113,3 +113,61 @@ def test_force_outcome_blocked_in_production(client: TestClient, db_session: Ses
         else:
             os.environ["APP_ENV"] = "test"
 
+
+def test_no_hardcoded_secrets_in_tracked_code():
+    """Permanent regression guard: assert no .py file in repo contains literal API key patterns."""
+    from pathlib import Path
+    import re
+
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    key_patterns = [
+        re.compile(r"rzp_live_[a-zA-Z0-9]{14,}"),
+        re.compile(r"rzp_test_[a-zA-Z0-9]{14,}"),
+        re.compile(r"AIza[0-9A-Za-z\-_]{35}"),
+        re.compile(r"sk-[a-zA-Z0-9]{24,}"),
+    ]
+
+    py_files = list(repo_root.glob("**/*.py"))
+    filtered = [
+        p for p in py_files
+        if ".venv" not in p.parts and ".tools" not in p.parts and ".git" not in p.parts
+    ]
+
+    violations = []
+    current_file = Path(__file__).resolve()
+    for file_path in filtered:
+        if file_path == current_file:
+            continue
+        content = file_path.read_text(encoding="utf-8", errors="ignore")
+        for pat in key_patterns:
+            matches = pat.findall(content)
+            if matches:
+                violations.append(f"{file_path.relative_to(repo_root)}: {matches}")
+
+    assert not violations, f"Hardcoded API keys detected in tracked source code: {violations}"
+
+
+def test_secrets_startup_validation_fails_fast():
+    """Verify application startup fails fast with clear errors when required credentials are missing."""
+    from backend.app.config import Settings
+    from backend.app.main import validate_startup_secrets
+
+    # 1. Live gateway missing keys
+    bad_gw_settings = Settings(use_live_gateway=True, razorpay_key_id=None, razorpay_key_secret=None)
+    with pytest.raises(RuntimeError) as exc:
+        validate_startup_secrets(bad_gw_settings)
+    assert "USE_LIVE_GATEWAY=true requires RAZORPAY_KEY_ID" in str(exc.value)
+
+    # 2. LLM explanations enabled without Gemini key
+    bad_llm_settings = Settings(use_llm_explanations=True, gemini_api_key=None)
+    with pytest.raises(RuntimeError) as exc:
+        validate_startup_secrets(bad_llm_settings)
+    assert "USE_LLM_EXPLANATIONS=true requires GEMINI_API_KEY" in str(exc.value)
+
+    # 3. Production environment without merchant API keys
+    bad_prod_settings = Settings(app_env="production", merchant_api_keys={})
+    with pytest.raises(RuntimeError) as exc:
+        validate_startup_secrets(bad_prod_settings)
+    assert "Production environment requires MERCHANT_API_KEYS" in str(exc.value)
+
+

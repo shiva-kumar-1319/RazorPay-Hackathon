@@ -7,12 +7,36 @@ from typing import Optional
 
 from fastapi import Header, HTTPException, status
 
-MERCHANT_API_KEYS: dict[str, str] = {
-    "rzp_live_default_demo_key": "merchant_default",
-    "rzp_test_alpha_key_123": "merchant_alpha",
-    "rzp_test_beta_key_456": "merchant_beta",
-    "rzp_test_gamma_key_789": "merchant_gamma",
-}
+def get_merchant_api_keys() -> dict[str, str]:
+    """Retrieve merchant API key mappings loaded from environment configuration."""
+    try:
+        from backend.app.config import get_settings
+        keys = get_settings().merchant_api_keys
+        if keys:
+            return keys
+    except Exception:
+        pass
+    raw = os.getenv("MERCHANT_API_KEYS")
+    if raw:
+        try:
+            import json
+            return json.loads(raw)
+        except Exception:
+            pass
+    return {}
+
+
+class _MerchantKeyLookup(dict):
+    """Dynamic dict proxy pulling merchant keys from environment settings without hardcoding."""
+    def __getitem__(self, item: str) -> str:
+        return get_merchant_api_keys()[item]
+    def __contains__(self, item: object) -> bool:
+        return str(item) in get_merchant_api_keys()
+    def get(self, item: str, default: Any = None) -> Any:
+        return get_merchant_api_keys().get(item, default)
+
+
+MERCHANT_API_KEYS = _MerchantKeyLookup()
 
 DEFAULT_MERCHANT_ID = "merchant_default"
 

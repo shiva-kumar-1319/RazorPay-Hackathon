@@ -35,9 +35,29 @@ STATIC_DIR = BASE_DIR / "static"
 TEMPLATES_DIR = BASE_DIR / "templates"
 
 
+def validate_startup_secrets(settings) -> None:
+    """Fail-fast validation ensuring required credentials are configured for active features."""
+    if settings.app_env == "production":
+        if not settings.merchant_api_keys:
+            raise RuntimeError(
+                "CRITICAL CONFIGURATION ERROR: Production environment requires MERCHANT_API_KEYS configured via environment."
+            )
+    if settings.use_live_gateway:
+        if not settings.razorpay_key_id or not settings.razorpay_key_secret:
+            raise RuntimeError(
+                "CRITICAL CONFIGURATION ERROR: USE_LIVE_GATEWAY=true requires RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET."
+            )
+    if settings.use_llm_explanations:
+        if not settings.gemini_api_key:
+            raise RuntimeError(
+                "CRITICAL CONFIGURATION ERROR: USE_LLM_EXPLANATIONS=true requires GEMINI_API_KEY."
+            )
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     settings = get_settings()
+    validate_startup_secrets(settings)
     configure_logging(settings.log_level, settings.log_format)
     if settings.auto_create_schema:
         initialize_database()

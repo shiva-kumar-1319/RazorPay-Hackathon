@@ -27,6 +27,13 @@ class Settings(BaseSettings):
         "http://localhost:8000",
         "http://127.0.0.1:8000",
     ]
+    # Gateway & Secrets Configuration
+    use_live_gateway: bool = False
+    razorpay_key_id: str | None = None
+    razorpay_key_secret: str | None = None
+    use_llm_explanations: bool = False
+    gemini_api_key: str | None = None
+    merchant_api_keys: dict[str, str] = {}
 
 
     @field_validator("cors_origins", mode="before")
@@ -38,6 +45,21 @@ class Settings(BaseSettings):
                 return json.loads(value)
             return [v.strip() for v in value.split(",") if v.strip()]
         return value
+
+    @field_validator("merchant_api_keys", mode="before")
+    @classmethod
+    def parse_merchant_api_keys(cls, value: Any) -> dict[str, str]:
+        if isinstance(value, str):
+            val = value.strip()
+            if val.startswith("{") and val.endswith("}"):
+                return json.loads(val)
+            pairs: dict[str, str] = {}
+            for item in val.split(","):
+                if ":" in item:
+                    k, v = item.split(":", 1)
+                    pairs[k.strip()] = v.strip()
+            return pairs
+        return value or {}
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
