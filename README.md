@@ -45,17 +45,6 @@ python -m benchmark.run_benchmark --seed 42 --transactions 1000
 
 ---
 
-## Benchmark Integrity & Fairness
-
-The benchmark framework enforces strict mathematical fairness and causal integrity:
-
-1. **Separation of Hidden Ground Truth & Observable Facts**: The agent and baseline strategies only receive `ObservableFailureEvent` (failure code, category, amount, customer history). They have zero access to `HiddenGroundTruth` (customer willingness, liquid balance, terminal fraud flags).
-2. **Strategy-Fair Deterministic Outcomes**: For any `(seed, scenario_id, action)`, stochastic outcomes are deterministically derived using SHA-256 seed hashing.
-3. **Execution-Order Invariance**: Strategy execution order cannot affect benchmark results. Running RecoverX before or after Blind Retry yields bit-for-bit identical results.
-4. **Reproducibility**: No non-deterministic `uuid4()` calls or unseeded RNGs exist in the benchmark pipeline. Running `--seed 42` produces identical numbers every time.
-
----
-
 ## Architecture
 
 ### Full System Pipeline
@@ -211,6 +200,17 @@ flowchart LR
     B --> SKIP1[" "]
     C --> SKIP2[" "]
 ```
+
+---
+
+## Benchmark Integrity & Fairness
+
+The benchmark framework enforces strict mathematical fairness and causal integrity:
+
+1. **Separation of Hidden Ground Truth & Observable Facts**: The agent and baseline strategies only receive `ObservableFailureEvent` (failure code, category, amount, customer history). They have zero access to `HiddenGroundTruth` (customer willingness, liquid balance, terminal fraud flags).
+2. **Strategy-Fair Deterministic Outcomes**: For any `(seed, scenario_id, action)`, stochastic outcomes are deterministically derived using SHA-256 seed hashing.
+3. **Execution-Order Invariance**: Strategy execution order cannot affect benchmark results. Running RecoverX before or after Blind Retry yields bit-for-bit identical results.
+4. **Reproducibility**: No non-deterministic `uuid4()` calls or unseeded RNGs exist in the benchmark pipeline. Running `--seed 42` produces identical numbers every time.
 
 ---
 
