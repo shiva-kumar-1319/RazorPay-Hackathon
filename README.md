@@ -1,4 +1,4 @@
-﻿<div align="center">
+<div align="center">
 
 # RecoverX
 
@@ -45,102 +45,161 @@ python -m benchmark.run_benchmark --seed 42 --transactions 1000
 
 ---
 
-## How It Works
+## Architecture
 
-RecoverX processes each payment failure through a multi-stage pipeline:
+### Full System Pipeline
+
+> Every box is a real module. Every arrow is a real data contract. The **Policy Gate** and **EV Optimizer** are what separate RecoverX from a simple retry engine.
 
 ```mermaid
-flowchart LR
-    A[Payment Failure] --> B[Failure\nClassification]
-    B --> C[Customer\nIntelligence]
-    C --> D{Policy\nGate}
-    D -->|Hard Failure| E[STOP]
-    D -->|Recoverable| F[ML Prediction\nP success per action]
-    F --> G[EV Optimization\nMax Net Revenue]
-    G --> H[Bounded Agent\n6-step budget]
-    H --> I[Idempotent\nExecution]
-    I --> J[Audit Chain\nSHA-256]
+flowchart TD
+    FAI(["💳 Payment Failure Event\nfailure_code · amount · merchant_id · customer_id"])
+
+    FAI -->|raw failure event| FI
+
+    subgraph STAGE1["① CLASSIFY — failure_intelligence.py + customer_intelligence.py"]
+        FI["Failure Intelligence\n─────────────────────\n50+ failure codes → category\nTEMPORARY · PAYMENT_METHOD\nCUSTOMER_ACTION · HARD_FAILURE"]
+        CI[("Customer Intelligence\n─────────────────────\nsuccess_rate · recovery_rate\nrisk_score · failure_streak\nbehavioral_segment · history")]
+        FI -->|failure_category| CI
+    end
+
+    CI -->|"failure_category\ncustomer_context\npermitted_actions"| PG
+
+    subgraph STAGE2["② POLICY GATE — recovery_policy.py   ★ Critical Differentiator"]
+        PG{"Is it a\nHard Failure?"}
+    end
+
+    PG -->|"FRAUD_REJECTED\nSTOLEN_CARD\nBLOCKED_CARD\nINVALID_ACCOUNT"| STOP
+    STOP["🛑 HARD STOP\n────────────────────────\nZero recovery action\nAudit log only\nNo retry — ever"]
+
+    PG -->|Recoverable| ML
+
+    subgraph STAGE3["③ ML PREDICTION + EV RANKING — prediction_model.py + decision_engine.py"]
+        ML["GradientBoostingClassifier\n+ CalibratedClassifierCV isotonic\n─────────────────────────────\n26-feature vector per candidate action\n→ P(success) for each action"]
+        ML -->|"P(success) per action"| EV
+        EV["Net Expected Value Engine\n──────────────────────────────────────\nEV = P × amount × time_decay\n    − execution_cost − friction_penalty\n──────────────────────────────────────\nRanks: SWITCH_TO_UPI vs PAYMENT_LINK\nvs DELAYED_RETRY vs RETRY_SAME"]
+    end
+
+    EV -->|"highest EV action\n+ idempotency_key"| AG
+
+    subgraph STAGE4["④ BOUNDED AGENT — recovery_agent.py   Max 6 steps"]
+        AG["PaymentRecoveryAgent\n──────────────────────────────────────────────────────"]
+        T1["① get_transaction_context     PII-redacted context"]
+        T2["② get_failure_policy          hard-stop classification"]
+        T3["③ score_recovery_candidates   ML scoring + EV ranking"]
+        T4["④ propose_recovery_plan       plan_id + idempotency_key"]
+        T5["⑤ request_execution           ownership + attempt-limit check"]
+        T6["⑥ write_explanation           append to audit chain"]
+        AG --> T1 --> T2 --> T3 --> T4 --> T5 --> T6
+    end
+
+    T5 -->|"validated action\nidempotency_key"| EX
+
+    subgraph STAGE5["⑤ IDEMPOTENT EXECUTION — recovery_execution.py"]
+        EX["IdempotencyRecord check\nSHA-256 request hash\n100 duplicate requests → 1 execution"]
+        EX --> E1["Retry Same Method"]
+        EX --> E2["Switch → UPI / Card / NetBanking"]
+        EX --> E3["Delayed Retry + Backoff Scheduler"]
+        EX --> E4["Customer Payment Link\nSMS · WhatsApp · Email"]
+    end
+
+    E1 & E2 & E3 & E4 -->|"recovery outcome\nrecovered_amount"| DB
+
+    subgraph STAGE6["⑥ PERSIST + PROVE — audit_chain.py + outbox_publisher.py"]
+        DB[("PostgreSQL\n──────────────────────\nTransaction\nRecoveryCase · RecoveryAction\nIdempotencyRecord · AuditLog")]
+        DB -->|"new audit entry"| CHAIN
+        DB -->|"domain event"| OB
+        CHAIN["SHA-256 Audit Chain\n──────────────────────────────────────────\nevent_hash = SHA256\n  seq | ts | actor | action |\n  before | after | prev_hash\n──────────────────────────────────────────\nverify_audit_chain detects any tampering"]
+        OB["Transactional Outbox\n──────────────────────────────────────────\nat-least-once event delivery\nexponential backoff · quarantine on max retries"]
+    end
+
+    OB -->|"published events"| DASH
+    DASH["📊 Dashboard / API\n──────────────────────────────\nLive GMV recovered · Recovery rate\nAudit trail · Benchmark metrics"]
 ```
-
-### Decision Engine
-
-RecoverX does not simply retry or pick the highest-probability action. It maximises **Net Expected Value**:
-
-```
-Net EV(action) = P(success) × amount × time_decay − execution_cost − friction_penalty
-```
-
-**Example — ₹4,999 card decline:**
-
-| Action | P(Success) | Net EV | Selected |
-|---|---|---|---|
-| SWITCH_TO_UPI | 84% | ₹4,183 | ✅ |
-| SWITCH_TO_NETBANKING | 70% | ₹3,461 | |
-| PAYMENT_LINK | 61% | ₹2,994 | |
-
-The UPI switch wins not just because it has the highest probability — it also has the lowest execution cost and lowest customer friction.
 
 ---
 
-## Architecture
+### Why RecoverX Beats a Retry Engine
 
-### System Layers
+```mermaid
+flowchart LR
+    subgraph OTHER["❌ Blind Retry Engine"]
+        O1["Payment Fails"] --> O2["Retry Everything"]
+        O2 --> O3["50 Hard-Stop Violations\nper 1,000 transactions"]
+        O2 --> O4["11% Recovery Rate"]
+        O2 --> O5["Net Revenue: ₹5.7 L"]
+    end
 
-| Layer | Responsibility | Module |
-|---|---|---|
-| **Failure Intelligence** | Classifies 50+ failure codes into TEMPORARY / PAYMENT_METHOD / CUSTOMER_ACTION / HARD_FAILURE | `services/failure_intelligence.py` |
-| **Customer Intelligence** | Computes success rate, recovery rate, risk score, behavioral segment from payment history | `services/customer_intelligence.py` |
-| **Recovery Policy Gate** | Deterministic hard-stop enforcement — fraud and closed accounts are never retried | `services/recovery_policy.py` |
-| **ML Prediction** | GradientBoostingClassifier + CalibratedClassifierCV (isotonic), 26-feature vector | `services/prediction_model.py` |
-| **Decision Engine** | Ranks candidate actions by Net Expected Value, selects optimal within policy | `services/decision_engine.py` |
-| **Bounded Agent** | Tool-calling orchestrator with 6-step execution budget and reasoning trace | `services/recovery_agent.py` |
-| **Execution Engine** | Idempotent recovery actions: retry, payment method switch, delayed retry, customer payment link | `services/recovery_execution.py` |
-| **Audit Chain** | Per-transaction SHA-256 linked audit log — tamper-evident, sequentially verifiable | `services/audit_chain.py` |
-| **Outbox Publisher** | Transactional outbox with at-least-once delivery, exponential backoff, poison-event quarantine | `services/outbox_publisher.py` |
-
-### Agent Design
-
-The `PaymentRecoveryAgent` is a **deterministic bounded orchestrator** — not an LLM. No language model is in the recovery path. Financial execution requires deterministic policy guarantees.
-
-The agent operates through exactly 6 registered tools:
-
-| Step | Tool | Purpose |
-|---|---|---|
-| 1 | `get_transaction_context` | Load transaction + PII-redacted customer context |
-| 2 | `get_failure_policy` | Evaluate hard-stop classification |
-| 3 | `score_recovery_candidates` | ML prediction + EV ranking per action |
-| 4 | `propose_recovery_plan` | Generate plan with idempotency key |
-| 5 | `request_execution` | Execute with ownership and attempt-limit validation |
-| 6 | `write_explanation` | Append to SHA-256 audit chain |
-
-If Step 2 returns a hard failure, the agent terminates immediately — steps 3–5 are skipped.
-
-### ML Model
-
-| Property | Value |
-|---|---|
-| Algorithm | `GradientBoostingClassifier` (scikit-learn) |
-| Calibration | `CalibratedClassifierCV` — isotonic regression |
-| Features | 26-dimensional: transaction, customer history, failure category, action type, behavioral segment |
-| Training | Synthetic domain-knowledge-derived labels (5,000 samples, 80/20 stratified split) |
-
-### Safety Guarantees
-
-- **Hard-stop policy**: `FRAUD_REJECTED`, `STOLEN_CARD`, `BLOCKED_CARD` → zero action, logged and stopped
-- **Double-recovery prevention**: `REFUSED` if transaction status is already `SUCCEEDED`
-- **Idempotency**: `IdempotencyRecord` with SHA-256 request hash — 100 identical requests → 1 execution
-- **Attempt limits**: Configurable per failure category, enforced before every execution
-- **`force_outcome` guard**: HTTP 403 if `APP_ENV` is not `test` — simulation fields cannot leak into production
-
-### Audit Chain
-
-Every action is appended to a per-transaction SHA-256 chain:
-
-```
-event_hash = SHA256(seq | timestamp | actor | action | before_state | after_state | details | prev_hash)
+    subgraph RX["✅ RecoverX"]
+        R1["Payment Fails"] --> R2["Classify Failure"]
+        R2 --> R3{"Hard Failure?"}
+        R3 -->|Yes| R4["STOP — zero cost, zero risk"]
+        R3 -->|No| R5["ML + EV selects\nbest action per transaction"]
+        R5 --> R6["Idempotent Execute"]
+        R6 --> R7["0 Violations\n59% Recovery Rate\nNet Revenue: ₹37.6 L"]
+    end
 ```
 
-`verify_audit_chain()` recomputes the entire chain and detects any tampering, deletion, or reordering.
+---
+
+### Agent Internals — 6-Step Bounded Execution
+
+```mermaid
+flowchart TD
+    START(["investigate_transaction called"])
+    START --> S1
+
+    S1["Step 1: get_transaction_context\n→ PII-masked email · phone\n→ customer history · intelligence"]
+    S1 --> S2
+
+    S2["Step 2: get_failure_policy\n→ failure category\n→ permitted action list\n→ is_hard_stop flag"]
+
+    S2 --> HCHECK{"is_hard_stop?"}
+    HCHECK -->|YES| ABORT["Abort immediately\nSkip steps 3-5\nJump to Step 6"]
+    HCHECK -->|NO| S3
+
+    S3["Step 3: score_recovery_candidates\n→ GBM predicts P per action\n→ EV engine ranks candidates\n→ returns ordered action list"]
+    S3 --> S4
+
+    S4["Step 4: propose_recovery_plan\n→ selected action + fallback\n→ plan_id generated\n→ idempotency_key created"]
+    S4 --> S5
+
+    S5["Step 5: request_execution\n→ verify merchant ownership\n→ check attempt limits\n→ idempotency guard\n→ execute action"]
+    S5 --> S6
+
+    ABORT --> S6
+    S6["Step 6: write_explanation\n→ plain-language summary\n→ appended to SHA-256 audit chain\n→ linked to previous hash"]
+    S6 --> END(["AgentInvestigationResponse returned"])
+```
+
+---
+
+### Decision Engine — Net Expected Value
+
+RecoverX does not pick the highest-probability action. It picks the highest **Net Expected Value** action:
+
+```
+Net EV(action) = P(success) × amount × time_decay − execution_cost − friction_penalty
+
+  time_decay    = e^(−0.01 × hours_to_recovery)
+  friction_cost = 0.02 × amount × friction_score
+```
+
+**Live example — ₹4,999 card decline, FREQUENT_BUYER customer:**
+
+```mermaid
+flowchart LR
+    INPUT(["CARD_DECLINED · ₹4,999 · FREQUENT_BUYER"])
+    INPUT --> A & B & C
+
+    A["SWITCH_TO_UPI\nP = 84%  Cost = ₹1.00  Friction = low\nNet EV = ₹4,183"]
+    B["SWITCH_TO_NETBANKING\nP = 70%  Cost = ₹1.50  Friction = medium\nNet EV = ₹3,461"]
+    C["PAYMENT_LINK\nP = 61%  Cost = ₹5.00  Friction = high\nNet EV = ₹2,994"]
+
+    A --> WIN["✅ SELECTED\nSWITCH_TO_UPI\nHighest Net EV"]
+    B --> SKIP1[" "]
+    C --> SKIP2[" "]
+```
 
 ---
 
