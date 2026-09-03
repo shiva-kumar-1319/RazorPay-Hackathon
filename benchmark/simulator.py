@@ -7,8 +7,20 @@ import random
 from typing import Any
 
 from backend.app.models.recovery import ActionType
-from backend.app.services.decision_engine import ACTION_COST_MODEL, FRICTION_PENALTY_RATE
 from benchmark.scenarios import BenchmarkScenarioItem, HiddenGroundTruth, ObservableFailureEvent
+
+# Standard benchmark action costs (execution_fee_inr, friction_weight)
+ACTION_COST_SPECS: dict[str, tuple[float, float]] = {
+    "RETRY_SAME_METHOD": (0.50, 0.05),
+    "SWITCH_TO_UPI": (1.00, 0.15),
+    "SWITCH_TO_CARD": (1.50, 0.20),
+    "SWITCH_TO_NETBANKING": (2.00, 0.30),
+    "DELAYED_RETRY": (0.50, 0.10),
+    "CUSTOMER_NOTIFICATION": (1.50, 0.40),
+    "PAYMENT_LINK": (1.50, 0.35),
+    "STOP_RECOVERY": (0.00, 0.00),
+}
+
 
 
 @dataclass(frozen=True)
@@ -94,14 +106,10 @@ class PaymentEnvironmentSimulator:
             )
 
         # 2. Lookup standard action costs and friction
-        try:
-            act_enum = ActionType(norm_action)
-            cost_cfg = ACTION_COST_MODEL[act_enum]
-            exec_cost = cost_cfg.execution_cost
-            friction_cost = round(FRICTION_PENALTY_RATE * obs.amount * cost_cfg.customer_friction_score, 2)
-        except (ValueError, KeyError):
-            exec_cost = 2.00
-            friction_cost = round(obs.amount * 0.02, 2)
+        cost_cfg = ACTION_COST_SPECS.get(norm_action, (2.00, 0.20))
+        exec_cost = cost_cfg[0]
+        friction_cost = round(0.01 * obs.amount * cost_cfg[1], 2)
+
 
         # 3. Simulate outcome grounded in payment rail physics & customer willingness
         roll = self.rng.random()

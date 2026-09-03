@@ -51,16 +51,8 @@ from backend.app.services.prediction_model import (
     RecoveryContext,
     recovery_prediction_model,
 )
-from benchmark.scenarios import generate_scenarios
-from benchmark.simulator import PaymentEnvironmentSimulator
-from benchmark.baselines import (
-    BlindImmediateRetry,
-    NoActionBaseline,
-    RecoverXAgent,
-    RuleHeuristicBaseline,
-)
-
 logger = logging.getLogger("recoverx.evaluation_service")
+
 
 
 def _compute_event_hash(step_number: int, timestamp: str, stage: str, actor: str, action: str, details: dict[str, Any]) -> str:
@@ -93,6 +85,15 @@ class EvaluationService:
         now = datetime.now(timezone.utc)
 
         # 1. Generate realistic benchmark scenarios with hidden ground truth
+        from benchmark.baselines import (
+            BlindImmediateRetry,
+            NoActionBaseline,
+            RecoverXAgent,
+            RuleHeuristicBaseline,
+        )
+        from benchmark.scenarios import generate_scenarios
+        from benchmark.simulator import PaymentEnvironmentSimulator
+
         scenarios_list = generate_scenarios(count=num_transactions, seed=seed)
         simulator = PaymentEnvironmentSimulator(seed=seed)
 
@@ -100,6 +101,7 @@ class EvaluationService:
         strat_blind = BlindImmediateRetry()
         strat_heur = RuleHeuristicBaseline()
         strat_rx = RecoverXAgent()
+
 
         total_failed_gmv = Decimal(str(round(sum(s.observable.amount for s in scenarios_list), 2)))
         recoverable_txns_count = sum(1 for s in scenarios_list if not s.hidden_truth.is_terminal_fraud_or_hotlisted)
