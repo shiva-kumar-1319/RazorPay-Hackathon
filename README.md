@@ -1,402 +1,291 @@
-# ⚡ RecoverX — Autonomous AI Revenue Recovery Platform
+﻿<div align="center">
 
-[![Python](https://img.shields.io/badge/Python-3.11%2B-blue.svg?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-1.0.0-009688.svg?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
-[![AI-Agent](https://img.shields.io/badge/Agent-Bounded_ReAct-FF6F00.svg?style=for-the-badge&logo=openai&logoColor=white)](https://github.com/shiva-kumar-1319/RazorPay-Hackathon)
-[![ML-Model](https://img.shields.io/badge/ML-Calibrated_GBM-success.svg?style=for-the-badge&logo=scikit-learn&logoColor=white)](https://scikit-learn.org/)
-[![Safety](https://img.shields.io/badge/Safety_Guards-6_Stopping_Rules_100%25-green.svg?style=for-the-badge&logo=security&logoColor=white)](https://github.com/shiva-kumar-1319/RazorPay-Hackathon)
-[![Idempotency](https://img.shields.io/badge/Execution-Transactional_Outbox-purple.svg?style=for-the-badge&logo=postgresql&logoColor=white)](https://github.com/shiva-kumar-1319/RazorPay-Hackathon)
-[![Audit](https://img.shields.io/badge/Audit-SHA--256_Ledger-informational.svg?style=for-the-badge&logo=blockchain.com&logoColor=white)](https://github.com/shiva-kumar-1319/RazorPay-Hackathon)
-[![Tests](https://img.shields.io/badge/Tests-All_Suites_Passing-brightgreen.svg?style=for-the-badge&logo=pytest&logoColor=white)](https://pytest.org/)
+# RecoverX
 
-> **RecoverX** is an enterprise-grade, autonomous payment recovery system engineered for modern payment aggregators and high-volume merchants. It replaces naive blind retries with a **Bounded ReAct Tool-Calling Agent**, **Calibrated Gradient-Boosted Recovery ML**, **Net Expected Value ($EV$) Optimization**, **Distributed Idempotent Execution**, and an **Immutable SHA-256 Cryptographic Audit Ledger**.
+### AI-Powered Payment Recovery Agent
 
-> [!IMPORTANT]
-> **Razorpay AI Buildathon 2026 Prototype Disclosure**:
-> RecoverX is built as an autonomous revenue recovery prototype for Track 03 (AI Revenue Recovery). Payment gateway rail physics and bank downtime dynamics are evaluated via a rigorous, reproducible simulator (`benchmark/simulator.py`) separating latent ground truth from observable failure events. In live environments, card vaults and certified aggregators handle raw PAN/CVV. See [docs/SECURITY.md](docs/SECURITY.md) and [docs/METRICS.md](docs/METRICS.md).
+**Razorpay AI Buildathon 2026 — Track 03: AI Revenue Recovery**
 
----
+![Python](https://img.shields.io/badge/Python-3.12-blue?style=flat-square&logo=python)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?style=flat-square&logo=fastapi)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-336791?style=flat-square&logo=postgresql)
+![Tests](https://img.shields.io/badge/Tests-180%20passed-success?style=flat-square)
+![Audit](https://img.shields.io/badge/Evaluator%20Audit-20%2F20-success?style=flat-square)
 
-## 📑 Table of Contents
-
-1. [The FinTech Problem: Why Payments Fail & Why Naive Retries Destroy Value](#-the-fintech-problem)
-2. [Interviewer Point of View: System Architecture](#-interviewer-point-of-view-system-architecture)
-3. [Why RecoverX Stands in the Top 1% of AI FinTech Solutions](#-why-recoverx-stands-in-the-top-1-of-ai-fintech-solutions)
-4. [Mathematical & Algorithmic Foundations](#-mathematical--algorithmic-foundations)
-5. [The 4 Enterprise Recovery Workflows](#-the-4-enterprise-recovery-workflows)
-6. [The 6 Non-Negotiable Safety Stopping Rules](#-the-6-non-negotiable-safety-stopping-rules)
-7. [Empirical 4-Way Benchmark & Business Proof](#-empirical-4-way-benchmark--business-proof)
-8. [Interactive Merchant Dashboard & Live Demo Flow](#-interactive-merchant-dashboard--live-demo-flow)
-9. [Quickstart & Verification Guide](#-quickstart--verification-guide)
-10. [Repository Structure & Production Readiness](#-repository-structure--production-readiness)
+</div>
 
 ---
 
-## 💥 The FinTech Problem
+## What is RecoverX?
 
-Every year, global e-commerce and subscription merchants lose over **$118 Billion in Gross Merchandise Value (GMV)** to failed payments. In India alone, payment drop-offs across UPI, Cards, and NetBanking account for 15–28% of all checkout attempts.
+RecoverX is an autonomous payment recovery agent that detects failed payments, determines the optimal recovery action using ML-predicted expected value, enforces policy safety guardrails, executes bounded recovery workflows, and measures the actual revenue recovered.
 
-```
-Failed Payment Ingestion ──► Naive Blind Retries ──► Bank CBS Rate Limiting ──► Double Billing & Chargebacks
-                                       │
-                                       ▼
-                       High Gateway Fees + Irritated Customers + Lost Revenue
-```
-
-### The Three Structural Pitfalls of Legacy Recovery Systems:
-1. **Blind Hammering**: Retrying on hard terminal codes (`BLOCKED_CARD`, `FRAUD_REJECTED`, `INVALID_ACCOUNT`) wastes gateway fees, risks payment aggregator blacklisting, and violates card network regulations.
-2. **Customer Friction & Cart Abandonment**: Re-prompting the customer for already-failed card methods causes cart abandonment. Legacy systems lack intelligent channel switching (e.g., auto-routing card declines to 1-click UPI intents).
-3. **Double Billing & Non-Idempotency**: Retrying without distributed locking and transactional outbox guarantees leads to duplicate customer debits and catastrophic chargeback disputes.
+**It turns payment failures from a write-off into a recoverable revenue opportunity.**
 
 ---
 
-## 🏛 Interviewer Point of View: System Architecture
+## Results
 
-RecoverX is designed with an end-to-end **7-Layer Modular Distributed Architecture** meeting the strictest FinTech compliance, low-latency execution (<50ms agent loop), and fault tolerance standards.
+Benchmark evaluated on 1,000 transactions with a fixed seed — fully reproducible.
 
-### System Architecture Diagram (High-Level View)
+| Strategy | Recovery Rate | Net Revenue Recovered | Policy Violations |
+|---|---|---|---|
+| No Action | 0.0% | ₹0 | 0 |
+| Blind Immediate Retry | 11.3% | ₹5,71,877 | **50** |
+| Rule-Based Heuristic | 59.3% | ₹37,34,346 | 0 |
+| **RecoverX** | **59.3%** | **₹37,65,378** | **0** |
 
-```
-┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
-│                                     RECOVERX PLATFORM ARCHITECTURE                                │
-└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+- **+₹31,93,501** net revenue vs blind retry (+559%)
+- **+₹31,032** net revenue vs rule heuristic (cost-awareness advantage)
+- **Zero** hard-stop policy violations — fraud and terminal failures are never retried
 
- [ PAYMENT EVENT INGESTION ]
-     │  Webhooks / API Telemetry (Razorpay, Stripe, Cashfree, UPI NPCI Switch)
-     ▼
- ┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
- │ LAYER 1: INGESTION & TELEMETRY                                                                  │
- │  • PII Redaction & Data Masking Engine (PCI-DSS & RBI CoFT Compliant)                           │
- │  • Normalized Telemetry Ingestion Buffer & Event Deduplication (UUIDv4)                         │
- └───────────────────────────────┬─────────────────────────────────────────────────────────────────┘
-                                 │
-                                 ▼
- ┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
- │ LAYER 2: DETERMINISTIC POLICY GATE & FAILURE INTELLIGENCE                                       │
- │  • ISO 8583 / ISO 20022 / NPCI Codebook Parser (50+ Error Codes)                              │
- │  • 4 Canonical Classifications: HARD_FAILURE | PAYMENT_METHOD | CUSTOMER_ACTION | TEMPORARY     │
- │  • 6 Non-Negotiable Safety Stopping Rules (Zero Retry Tolerance on Stolen Cards / Closed Accts)│
- └───────────────────────────────┬─────────────────────────────────────────────────────────────────┘
-                                 │
-                                 ▼
- ┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
- │ LAYER 3: CUSTOMER BEHAVIORAL INTELLIGENCE & FEATURE STORE                                       │
- │  • RFM Historical Vectors (Recency, Frequency, Monetary Value)                                  │
- │  • Multi-Channel Preference Vector (UPI Affinity vs Card Affinity vs NetBanking)                │
- │  • Real-Time Failure Streak & Risk Scoring Matrix                                               │
- └───────────────────────────────┬─────────────────────────────────────────────────────────────────┘
-                                 │
-                                 ▼
- ┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
- │ LAYER 4: CALIBRATED RECOVERY PREDICTION ML MODEL                                                │
- │  • Gradient Boosted Trees (XGBoost / LightGBM) with Platt Scaling Calibration                   │
- │  • Multi-Strategy Output: P(Success | Retry), P(Success | Switch_UPI), P(Success | Link)        │
- │  • 100% Native Pure-Python Fallback (Zero C++ dependency runtime guarantee)                    │
- └───────────────────────────────┬─────────────────────────────────────────────────────────────────┘
-                                 │
-                                 ▼
- ┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
- │ LAYER 5: AUTONOMOUS BOUNDED REACT AGENT (THOUGHT ──► TOOL ──► OBSERVATION ──► PLAN)              │
- │  • Strict Allow-List Tool Registry (inspect_policy, get_prediction, score_candidates, explain)   │
- │  • Multi-Candidate Net Expected Value Maximization: EV = P * GMV * e^(-λt) - Cost - Friction    │
- │  • Explainable AI: Auto-generates Customer Message, Merchant Notes & Compliance Log             │
- └───────────────────────────────┬─────────────────────────────────────────────────────────────────┘
-                                 │
-                                 ▼
- ┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
- │ LAYER 6: DISTRIBUTED IDEMPOTENT EXECUTION ENGINE                                                │
- │  • Transactional Outbox Pattern (Guaranteed Exactly-Once Asynchronous Event Delivery)           │
- │  • Distributed Pessimistic / Optimistic Version Locks (Zero Double-Billing Guarantee)           │
- │  • 4 Workflows: ① Direct Retry  ② Method Switch (UPI)  ③ Tokenized Link  ④ Scheduled Backoff │
- └───────────────────────────────┬─────────────────────────────────────────────────────────────────┘
-                                 │
-                                 ▼
- ┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
- │ LAYER 7: CRYPTOGRAPHIC AUDIT LEDGER & BUSINESS PROOF                                            │
- │  • Immutable SHA-256 Event Checksum Hashing Chain (Full Non-Repudiation Audit Trail)           │
- │  • 4-Way Empirical Benchmarking Engine (No Action vs Blind vs Heuristic vs RecoverX)            │
- │  • Executive Merchant Financial Dashboard (Real-time Net ROI Multiplier, Cost-to-Recover)       │
- └─────────────────────────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Complete Sequence Flow Diagram
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor Customer as 👤 Customer
-    participant Gateway as 🏦 Payment Gateway / NPCI
-    participant Ingestion as 📥 Ingestion & PII Redactor
-    participant Policy as 🛡️ Deterministic Policy Gate
-    participant ML as 🧠 Calibrated ML Model
-    participant Agent as 🤖 Bounded ReAct Agent
-    participant Executor as ⚡ Distributed Executor
-    participant Audit as 🔒 SHA-256 Audit Ledger
-
-    Customer->>Gateway: Initiates Payment (₹4,999 via Card)
-    Gateway-->>Ingestion: Webhook (CARD_DECLINED / ISO 05 Do Not Honor)
-    Ingestion->>Ingestion: Redact PII (Mask PAN/CVV/Email)
-    Ingestion->>Audit: Record Ingestion Event (Hash SHA-256)
-    
-    Ingestion->>Policy: Evaluate Failure Code (CARD_DECLINED)
-    Policy-->>Agent: Permitted Actions: [SWITCH_TO_UPI, PAYMENT_LINK, SWITCH_NETBANKING]
-    Note over Policy,Agent: Same-Card Retries Strictly Prohibited!
-
-    Agent->>ML: Predict Success Probabilities across Permitted Actions
-    ML-->>Agent: P(Switch UPI) = 0.89, P(Payment Link) = 0.72, P(NetBanking) = 0.61
-    
-    Agent->>Agent: Compute Net Expected Value (EV)<br/>EV = P * GMV * e^(-λt) - Gateway Cost - Friction Penalty
-    Note over Agent: Chosen Action: SWITCH_TO_UPI (Net EV = ₹4,430.71)
-    
-    Agent->>Executor: Submit Signed Execution Request (with Idempotency Key)
-    Executor->>Executor: Acquire DB Version Lock & Validate Pre-Guards
-    Executor->>Gateway: Dispatch Instant UPI Intent Push (₹4,999.00)
-    Gateway-->>Customer: UPI App Notification (GooglePay / PhonePe)
-    Customer->>Gateway: Authorizes UPI PIN
-    Gateway-->>Executor: Transaction Succeeded!
-    
-    Executor->>Audit: Commit Recovery State & Chain SHA-256 Hash
-    Executor-->>Customer: Order Confirmed Instantly 🎉
-```
-
----
-
-## 🌟 Why RecoverX Stands in the Top 1% of AI FinTech Solutions
-
-Most hackathon projects build naive chatbot wrappers around OpenAI/Anthropic APIs. **In production FinTech and payment systems, raw unconstrained LLMs are dangerous and illegal.** 
-
-The table below contrasts naive AI wrappers against RecoverX's enterprise architecture:
-
-| Architectural Dimension | Naive LLM Prompt Wrappers ❌ | RecoverX Autonomous FinTech Platform 🏆 |
-| :--- | :--- | :--- |
-| **Agent Decision Architecture** | Unbounded prompt-based reasoning; hallucinates non-existent gateways. | **Formal Bounded ReAct Agent** with strict Pydantic schemas and 6 allow-listed tools. |
-| **Compliance & Hard Stops** | May retry on stolen cards or fraud flags if prompted poorly. | **Deterministic Policy Pre-Guard**: 100% hard block on stolen/fraud/closed accounts. |
-| **Double-Billing Safety** | Vulnerable to network retry races and duplicate customer debits. | **Transactional Outbox + Optimistic DB Version Locking**; exactly-once execution. |
-| **Financial Decision Logic** | Guesses actions without cost awareness. | **Net Expected Value ($EV$) Maximization**: mathematically weighs GMV, time decay, gateway fees, and user friction. |
-| **PII & Data Privacy** | Transmits raw credit card numbers / emails to external LLM APIs. | **Zero-PII Tokenization Layer**: Redacts all card details and PII before agent reasoning. |
-| **Latency SLA** | 1,500ms – 4,000ms (unacceptable for real-time checkout switches). | **< 45ms Pure-Python In-Memory Loop**; instantaneous UPI intent fallback. |
-| **Auditability & Proof** | Black-box prompt responses with no mathematical or regulatory trail. | **Cryptographic SHA-256 Event Hash Chaining**; full non-repudiation audit ledger. |
-| **Business Justification** | Claims "AI magic" with zero comparative benchmark proof. | **4-Way Empirical Simulation Engine** proving 84.5% recovery rate and 24.7x Net ROI. |
-
----
-
-## 📐 Mathematical & Algorithmic Foundations
-
-RecoverX executes decisions based on rigorous quantitative formulas rather than heuristic guesses.
-
-### 1. Net Expected Value ($EV$) Formulation with Exponential Time Decay
-
-For any candidate recovery action $a \in \mathcal{A}$, the Net Expected Value is defined as:
-
-$$\text{EV}(a) = P(\text{Success} \mid \mathbf{x}, a) \cdot \text{GMV} \cdot e^{-\lambda \cdot \Delta t} - \text{Cost}(a) - \text{FrictionPenalty}(a)$$
-
-Where:
-* $P(\text{Success} \mid \mathbf{x}, a) \in [0, 1]$: Calibrated success probability predicted by the ML model given context vector $\mathbf{x}$.
-* $\text{GMV}$: Gross transaction amount in INR ($\text{₹}$).
-* $\lambda$: Empirical conversion decay parameter ($\lambda = 0.0005\text{ s}^{-1}$ for e-commerce, reflecting shopping cart abandonment urgency).
-* $\Delta t$: Time elapsed since initial failure in seconds.
-* $\text{Cost}(a)$: Direct gateway fee and messaging dispatch cost (e.g., $\text{₹}0.15$ for WhatsApp, $\text{₹}1.00$ for UPI switch).
-* $\text{FrictionPenalty}(a)$: Quantified customer UX friction cost based on user fatigue and retry count.
-
-### 2. Multi-Candidate Optimal Strategy Selection
-
-The Bounded ReAct Agent evaluates all policy-permitted candidate actions $\mathcal{A}_{\text{permitted}}$ and selects the optimal recovery vector:
-
-$$a^* = \arg\max_{a \in \mathcal{A}_{\text{permitted}}} \text{EV}(a)$$
-
-$$\text{Decision Rule} = \begin{cases} a^* & \text{if } \text{EV}(a^*) > 0 \\ \text{STOP\_RECOVERY} & \text{if } \max_{a} \text{EV}(a) \le 0 \end{cases}$$
-
-### 3. Net Financial ROI Multiplier
-
-$$\text{ROI}_{\text{Net}} = \frac{\text{Total GMV Recovered} - \text{Total Execution Costs}}{\text{Total Execution Costs}}$$
-
-In empirical 100-transaction benchmarks, RecoverX achieves a **$1,513.2\times$ gross ROI** on execution fees and a **$24.7\times$ net enterprise recovery lift** over legacy systems.
-
----
-
-## ⚡ The 4 Enterprise Recovery Workflows
-
-RecoverX orchestrates 4 automated recovery workflows based on failure root causes:
-
-```
-┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
-│                                 4 ENTERPRISE RECOVERY WORKFLOWS                                 │
-├──────────────────────────┬──────────────────────────┬──────────────────────────┬────────────────┤
-│ 1. Direct Smart Retry    │ 2. Payment-Method Switch │ 3. Tokenized Recovery    │ 4. Exponential │
-│    (Same Method)         │    (UPI / Card / NetBank)│    Payment Link          │    Backoff     │
-├──────────────────────────┼──────────────────────────┼──────────────────────────┼────────────────┤
-│ • Used for transient     │ • Used for card decline, │ • Used for 3DS drops,    │ • Used for CBS │
-│   gateway network blips  │   e-commerce disabled,   │   insufficient funds,    │   bank outages │
-│ • Zero customer friction │   mandate debit errors   │   cart abandonment       │ • Jittered     │
-│ • Sub-second resolution  │ • Seamless 1-click UPI   │ • 15-min secure token    │   scheduling   │
-└──────────────────────────┴──────────────────────────┴──────────────────────────┴────────────────┘
-```
-
-1. **Direct Smart Retry (`RETRY_SAME_METHOD`)**: Instantaneous single retry for transient network timeouts (`TIMEOUT`, `GATEWAY_ERROR`) when the upstream gateway has recovered.
-2. **Payment-Method Switch (`SWITCH_TO_UPI`, `SWITCH_TO_NETBANKING`)**: Automatically converts failed card attempts into high-conversion UPI Intent / QR links or alternate netbanking channels.
-3. **Customer Recovery Session & Tokenized Link (`PAYMENT_LINK`, `CUSTOMER_NOTIFICATION`)**: Generates a secure, signed, time-limited (`TTL = 15m`) checkout link dispatched via WhatsApp/SMS with full order context and multi-method options.
-4. **Scheduled Delayed Retry with Exponential Backoff (`DELAYED_RETRY`)**: Calculates $T_{\text{due}} = T_{\text{now}} + \text{Base} \times 2^{\text{attempt}} + \text{Jitter}$ to recover transactions during core banking system (CBS) maintenance windows without triggering bank rate-limiting.
-
----
-
-## 🛡 The 6 Non-Negotiable Safety Stopping Rules
-
-In financial payment processing, **knowing when NOT to retry is as critical as knowing when to retry.** RecoverX enforces 6 deterministic safety stopping rules with a **100% compliance guarantee**:
-
-| Rule Code | Rule Name | Guard Mechanism | Compliance Behavior |
-| :--- | :--- | :--- | :--- |
-| `STOP_HARD_FAILURE` | **Zero Tolerance on Stolen/Fraud Cards** | Policy Gate | Flags `FRAUD_REJECTED`, `BLOCKED_CARD`, `STOLEN_CARD`. Max retries = 0. Immediate terminal stop. |
-| `STOP_MAX_ATTEMPTS` | **Exhaustion Ceiling Guard** | Execution Guard | Hard ceiling of 3 attempts per transaction. Prevents bank rate-limiting and card lockout. |
-| `STOP_DOUBLE_RECOVERY` | **Anti-Double-Billing Lock** | Distributed Lock | If transaction status is `SUCCEEDED`, all subsequent retries are permanently blocked. |
-| `STOP_NEGATIVE_EV` | **Cost-Friction Financial Guard** | Agent Guard | If $\text{EV} \le 0$ (e.g., gateway fee exceeds potential recovered value), abort recovery. |
-| `STOP_ACCOUNT_CLOSED` | **Invalid Account Guard** | Policy Gate | Terminal block on `ACCOUNT_CLOSED` or `INVALID_BENEFICIARY` NetBanking failures. |
-| `STOP_CONCURRENT_RACE` | **Distributed Lock Guard** | Version Lock | Optimistic locking on transaction records prevents parallel duplicate execution threads. |
-
----
-
-## 📊 Empirical 4-Way Benchmark & Business Proof
-
-RecoverX includes a standalone, reproducible comparative benchmark evaluating 4 payment recovery strategies on identical 1,000-transaction test batches (Deterministic Seed: 42):
-
-```
-┌─────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│                       4-WAY RECOVERY STRATEGY COMPARATIVE BENCHMARK (1,000 SCENARIOS)                       │
-├──────────────────────┬──────────┬───────────────┬──────────────────┬──────────────────┬─────────────────────┤
-│ Strategy Name        │ Recovery%│ Volume Recov  │ Net Revenue      │ Hard Violations  │ Net Lift vs Blind   │
-├──────────────────────┼──────────┼───────────────┼──────────────────┼──────────────────┼─────────────────────┤
-│ 1. NO_ACTION         │    0.00% │ INR      0.00 │ INR         0.00 │        0         │ Base                │
-│ 2. BLIND_RETRY       │   12.00% │ INR 779,598.60│ INR   569,052.53 │       62         │ Reference           │
-│ 3. HEURISTIC_RULES   │   59.50% │INR3,799,019.29│ INR 3,767,112.57 │        0         │ +INR 3,198,060.04   │
-│ 4. RECOVERX_AI 🏆    │   59.30% │INR3,789,975.60│ INR 3,757,329.78 │        0         │ +INR 3,188,277.25   │
-└──────────────────────┴──────────┴───────────────┴──────────────────┴──────────────────┴─────────────────────┘
-```
-
-### Verified Empirical Performance (Seed 42):
-* **+INR 3,188,277.25 Net Lift (+560.3%) over Blind Retry**: Recovers 59.30% of lost revenue while avoiding wasted rail fees and customer friction.
-* **Strict Zero Hard-Stop Violations**: While Blind Retry suffered **62 severe policy violations** by re-hammering hard terminal failures (`FRAUD_REJECTED`, `STOLEN_CARD`, `INVALID_ACCOUNT`), RecoverX achieved strictly **0 violations**.
-* **Calibrated Machine Learning**: Supervised `CalibratedClassifierCV` using Isotonic Regression achieves a Brier score of **0.1466** and ROC-AUC of **0.8351** on holdout testing.
-* **Full Audit Ledger Integrity**: 100% of recovery actions are chained in an immutable SHA-256 cryptographic sequence for complete auditor transparency.
-
-
----
-
-## 🖥 Interactive Merchant Dashboard & Live Demo Flow
-
-RecoverX includes a modern, high-aesthetic dark-mode merchant dashboard accessible via browser at `http://127.0.0.1:8000/dashboard`.
-
-### Dashboard Capabilities:
-1. **📊 Executive Overview**: Real-time GMV recovered, recovery rate lift, net ROI multiplier, and live transaction stream.
-2. **🤖 AI Recovery Agent Studio**: Interactive transaction failure investigation, step-by-step ReAct thought trace inspector, and multi-stakeholder explanation viewer.
-3. **⚡ Execution Workflows & Links**: Live tokenized customer checkout portal simulator with multi-method payment completion.
-4. **⚖️ Business Proof & Benchmark**: Live 4-way strategy comparison matrix, 6-rule safety compliance auditor, and cryptographic SHA-256 audit ledger inspector.
-
----
-
-## 🚀 Quickstart & Verification Guide
-
-### Prerequisites
-* Python 3.11+ / Python 3.12
-* Windows / macOS / Linux
-
-### 1. Set Up Environment & Install Dependencies
-```bash
-# Clone repository
-git clone https://github.com/shiva-kumar-1319/RazorPay-Hackathon.git
-cd RazorPay-Hackathon
-
-# Create and activate virtual environment
-python -m venv .venv
-# On Windows:
-.venv\Scripts\activate
-# On Linux/macOS:
-source .venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
-```
-
-### 2. Run Comprehensive Automated Test Suites
-```bash
-pytest --verbose
-```
-*Executes unit tests, security tests (`tests/security/`), invariant tests (`tests/invariants/`), and benchmark tests (`tests/evaluation/`).*
-
-### 3. Run Reproducible 4-Way Comparative Benchmark
 ```bash
 python -m benchmark.run_benchmark --seed 42 --transactions 1000
 ```
-*Executes all 4 strategies (No Action, Blind Retry, Heuristic, RecoverX) across 1,000 transactions and generates statistical proof.*
 
-### 4. Run Autonomous End-to-End Demo Script
+---
+
+## How It Works
+
+RecoverX processes each payment failure through a multi-stage pipeline:
+
+```mermaid
+flowchart LR
+    A[Payment Failure] --> B[Failure\nClassification]
+    B --> C[Customer\nIntelligence]
+    C --> D{Policy\nGate}
+    D -->|Hard Failure| E[STOP]
+    D -->|Recoverable| F[ML Prediction\nP success per action]
+    F --> G[EV Optimization\nMax Net Revenue]
+    G --> H[Bounded Agent\n6-step budget]
+    H --> I[Idempotent\nExecution]
+    I --> J[Audit Chain\nSHA-256]
+```
+
+### Decision Engine
+
+RecoverX does not simply retry or pick the highest-probability action. It maximises **Net Expected Value**:
+
+```
+Net EV(action) = P(success) × amount × time_decay − execution_cost − friction_penalty
+```
+
+**Example — ₹4,999 card decline:**
+
+| Action | P(Success) | Net EV | Selected |
+|---|---|---|---|
+| SWITCH_TO_UPI | 84% | ₹4,183 | ✅ |
+| SWITCH_TO_NETBANKING | 70% | ₹3,461 | |
+| PAYMENT_LINK | 61% | ₹2,994 | |
+
+The UPI switch wins not just because it has the highest probability — it also has the lowest execution cost and lowest customer friction.
+
+---
+
+## Architecture
+
+### System Layers
+
+| Layer | Responsibility | Module |
+|---|---|---|
+| **Failure Intelligence** | Classifies 50+ failure codes into TEMPORARY / PAYMENT_METHOD / CUSTOMER_ACTION / HARD_FAILURE | `services/failure_intelligence.py` |
+| **Customer Intelligence** | Computes success rate, recovery rate, risk score, behavioral segment from payment history | `services/customer_intelligence.py` |
+| **Recovery Policy Gate** | Deterministic hard-stop enforcement — fraud and closed accounts are never retried | `services/recovery_policy.py` |
+| **ML Prediction** | GradientBoostingClassifier + CalibratedClassifierCV (isotonic), 26-feature vector | `services/prediction_model.py` |
+| **Decision Engine** | Ranks candidate actions by Net Expected Value, selects optimal within policy | `services/decision_engine.py` |
+| **Bounded Agent** | Tool-calling orchestrator with 6-step execution budget and reasoning trace | `services/recovery_agent.py` |
+| **Execution Engine** | Idempotent recovery actions: retry, payment method switch, delayed retry, customer payment link | `services/recovery_execution.py` |
+| **Audit Chain** | Per-transaction SHA-256 linked audit log — tamper-evident, sequentially verifiable | `services/audit_chain.py` |
+| **Outbox Publisher** | Transactional outbox with at-least-once delivery, exponential backoff, poison-event quarantine | `services/outbox_publisher.py` |
+
+### Agent Design
+
+The `PaymentRecoveryAgent` is a **deterministic bounded orchestrator** — not an LLM. No language model is in the recovery path. Financial execution requires deterministic policy guarantees.
+
+The agent operates through exactly 6 registered tools:
+
+| Step | Tool | Purpose |
+|---|---|---|
+| 1 | `get_transaction_context` | Load transaction + PII-redacted customer context |
+| 2 | `get_failure_policy` | Evaluate hard-stop classification |
+| 3 | `score_recovery_candidates` | ML prediction + EV ranking per action |
+| 4 | `propose_recovery_plan` | Generate plan with idempotency key |
+| 5 | `request_execution` | Execute with ownership and attempt-limit validation |
+| 6 | `write_explanation` | Append to SHA-256 audit chain |
+
+If Step 2 returns a hard failure, the agent terminates immediately — steps 3–5 are skipped.
+
+### ML Model
+
+| Property | Value |
+|---|---|
+| Algorithm | `GradientBoostingClassifier` (scikit-learn) |
+| Calibration | `CalibratedClassifierCV` — isotonic regression |
+| Features | 26-dimensional: transaction, customer history, failure category, action type, behavioral segment |
+| Training | Synthetic domain-knowledge-derived labels (5,000 samples, 80/20 stratified split) |
+
+### Safety Guarantees
+
+- **Hard-stop policy**: `FRAUD_REJECTED`, `STOLEN_CARD`, `BLOCKED_CARD` → zero action, logged and stopped
+- **Double-recovery prevention**: `REFUSED` if transaction status is already `SUCCEEDED`
+- **Idempotency**: `IdempotencyRecord` with SHA-256 request hash — 100 identical requests → 1 execution
+- **Attempt limits**: Configurable per failure category, enforced before every execution
+- **`force_outcome` guard**: HTTP 403 if `APP_ENV` is not `test` — simulation fields cannot leak into production
+
+### Audit Chain
+
+Every action is appended to a per-transaction SHA-256 chain:
+
+```
+event_hash = SHA256(seq | timestamp | actor | action | before_state | after_state | details | prev_hash)
+```
+
+`verify_audit_chain()` recomputes the entire chain and detects any tampering, deletion, or reordering.
+
+---
+
+## Project Structure
+
+```
+├── backend/app/
+│   ├── api/                  # FastAPI REST endpoints
+│   ├── models/               # SQLAlchemy ORM (Transaction, AuditLog, IdempotencyRecord, ...)
+│   ├── schemas/              # Pydantic request/response models
+│   └── services/
+│       ├── failure_intelligence.py   # Failure taxonomy + classification
+│       ├── customer_intelligence.py  # Customer history + risk scoring
+│       ├── recovery_policy.py        # Deterministic policy gate
+│       ├── prediction_model.py       # GBM + isotonic ML model
+│       ├── decision_engine.py        # Net EV calculator + action ranker
+│       ├── recovery_agent.py         # Bounded 6-step orchestrator
+│       ├── recovery_execution.py     # Idempotent execution engine
+│       ├── audit_chain.py            # SHA-256 tamper-evident ledger
+│       └── outbox_publisher.py       # At-least-once event delivery
+├── benchmark/
+│   ├── scenarios.py          # Causal separation: HiddenGroundTruth vs ObservableFailureEvent
+│   ├── simulator.py          # Payment environment (physics-based outcome resolution)
+│   ├── baselines.py          # No Action, Blind Retry, Rule Heuristic, RecoverX
+│   ├── metrics.py            # StrategyMetrics: recovery rate, GMV, cost, violations
+│   └── run_benchmark.py      # 4-way comparative benchmark CLI
+├── tests/
+│   ├── evaluation/           # Benchmark invariants: seed determinism, zero hard-stop violations
+│   ├── invariants/           # Double-recovery guard, audit chain integrity
+│   └── security/             # PII masking, tenant isolation, auth
+├── scripts/
+│   ├── evaluator_check.py    # 20-point automated compliance audit
+│   └── demo_end_to_end.py    # 5-scenario interactive walkthrough
+├── docs/                     # Architecture docs, security disclosure
+├── Dockerfile
+├── docker-compose.yml
+└── .github/workflows/ci.yml
+```
+
+---
+
+## Getting Started
+
+### Prerequisites
+
+- Python 3.12+
+- Docker Desktop (for full stack)
+
+### Run without Docker (benchmark + tests only)
+
+```bash
+git clone https://github.com/shiva-kumar-1319/RazorPay-Hackathon
+cd RazorPay-Hackathon
+python -m venv .venv
+
+# Windows
+.venv\Scripts\activate
+# macOS / Linux
+source .venv/bin/activate
+
+pip install -r requirements.txt
+
+# Run automated compliance audit
+python scripts/evaluator_check.py
+
+# Run benchmark
+python -m benchmark.run_benchmark --seed 42 --transactions 1000
+
+# Run test suite
+pytest tests/ -q
+```
+
+### Run full stack with Docker
+
+```bash
+docker-compose up --build
+```
+
+| Endpoint | URL |
+|---|---|
+| Dashboard | http://localhost:8000/dashboard |
+| API Docs (Swagger) | http://localhost:8000/docs |
+| Health | http://localhost:8000/health |
+
+### Interactive Demo (5 scenarios)
+
 ```bash
 python scripts/demo_end_to_end.py
 ```
-*Demonstrates all 5 production scenarios from failure ingestion to final settlement and audit verification.*
 
-### 5. Run Evaluator Compliance Audit Check
+Runs five payment failure scenarios end-to-end — classification, ML scoring, EV decision, execution, and audit chain verification:
+
+| # | Failure | Recovery Action |
+|---|---|---|
+| 1 | CARD_DECLINED (₹4,999) | SWITCH_TO_UPI → recovered |
+| 2 | FRAUD_REJECTED (₹28,500) | HARD STOP → zero action, audit logged |
+| 3 | TIMEOUT (₹1,250) | DELAYED_RETRY → scheduled |
+| 4 | INSUFFICIENT_FUNDS (₹8,000) | PAYMENT_LINK → customer pays via link |
+| 5 | UPI_FAILURE (₹3,100) | DELAYED_RETRY → recovered |
+
+---
+
+## Verification
+
 ```bash
+# Compliance audit — must exit 0
 python scripts/evaluator_check.py
-```
-*Validates that all 28 evaluation criteria pass cleanly (CRITICAL: 0, HIGH: 0).*
 
-### 6. Launch FastAPI Server & Merchant Dashboard
+# Expected output:
+# AUDIT SUMMARY: CRITICAL: 0 | HIGH: 0 | WARNINGS: 0
+# ALL EVALUATION CHECKS PASSED SUCCESSFULLY.
+```
+
 ```bash
-python -m uvicorn backend.app.main:app --reload --host 127.0.0.1 --port 8000
-```
-* Open **Merchant Dashboard**: [http://127.0.0.1:8000/dashboard](http://127.0.0.1:8000/dashboard)
-* Open **Interactive API Docs (Swagger UI)**: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
+# Test suite
+pytest tests/ -q
 
-* Open **Customer Recovery Portal Demo**: [http://127.0.0.1:8000/pay/demo](http://127.0.0.1:8000/pay/demo)
-
----
-
-## 📁 Repository Structure & Production Readiness
-
-```
-RazorPay-Hackathon/
-├── backend/
-│   ├── app/
-│   │   ├── api/                    # REST API Endpoints (FastAPI)
-│   │   │   ├── agent.py            # Agent investigation & catalog endpoints
-│   │   │   ├── dashboard.py        # Merchant dashboard analytics endpoints
-│   │   │   ├── evaluation.py       # Benchmark, business proof & audit endpoints
-│   │   │   ├── execution.py        # Recovery execution & payment link endpoints
-│   │   │   ├── failures.py         # Failure intelligence & taxonomy endpoints
-│   │   │   └── prediction.py       # ML scoring & prediction endpoints
-│   │   ├── models/                 # SQLAlchemy 2.0 ORM Models
-│   │   │   └── recovery.py         # Transaction, Attempt, Action, Case, AuditLog
-│   │   ├── schemas/                # Pydantic v2 Strict Request/Response Schemas
-│   │   ├── services/               # Core Business Logic & FinTech Engines
-│   │   │   ├── agent_tools.py      # Bounded ReAct Tool Registry
-│   │   │   ├── customer_intelligence.py # RFM & Behavioral Profiler
-│   │   │   ├── decision_engine.py  # Net EV Optimization Engine
-│   │   │   ├── evaluation_service.py # 4-Way Benchmark & Cryptographic Audit
-│   │   │   ├── failure_intelligence.py # ISO 8583 / NPCI Taxonomy Engine
-│   │   │   ├── prediction_model.py # Calibrated Gradient Boosted Recovery ML
-│   │   │   ├── recovery_agent.py   # Autonomous Bounded ReAct Agent
-│   │   │   ├── recovery_execution.py # 4 Recovery Execution Workflows
-│   │   │   └── recovery_policy.py  # 6 Deterministic Safety Stopping Rules
-│   │   ├── simulator/              # High-fidelity payment failure generator
-│   │   ├── static/                 # CSS/JS Assets for Merchant Dashboard UI
-│   │   ├── templates/              # HTML5 Templates (Dashboard & Customer Pay)
-│   │   └── main.py                 # FastAPI Application Factory (v1.0.0)
-│   └── tests/                      # Comprehensive Test Suite (169 Tests)
-├── docs/                           # Architecture Deep Dives & Submission Papers
-│   ├── architecture-deep-dive.md   # 7-Layer Deep Technical Specification
-│   ├── day-14-final-submission.md  # Comprehensive Hackathon Submission Whitepaper
-│   └── demo-walkthrough-guide.md   # Step-by-Step Judge Evaluation Guide
-├── scripts/
-│   └── demo_flow.py                # Standalone End-to-End Demo Script
-├── run_tests.py                    # Master Test Runner
-└── README.md                       # Project Showcase & Documentation
+# Expected output:
+# 180 passed, 3 warnings in 19.10s
 ```
 
 ---
 
-## 🏆 Final Submission Summary
+## Tech Stack
 
-RecoverX represents the pinnacle of AI applied to FinTech infrastructure:
-* **Not a prompt wrapper**: A mathematically grounded, bounded autonomous agent.
-* **100% Safety Compliance**: Complete policy enforcement preventing double debits and fraud retries.
-* **Empirically Proven**: 84.5% recovery rate and 24.7x net ROI on live simulated batches.
-* **Production-Grade**: Clean modular code, 169 passing tests, PII masking, and cryptographic auditability.
+| Layer | Technology |
+|---|---|
+| API | FastAPI + Uvicorn |
+| Database | PostgreSQL + SQLAlchemy (async) |
+| Cache / Events | Redis |
+| ML | scikit-learn (GradientBoosting + isotonic calibration) |
+| Migrations | Alembic |
+| Testing | pytest + pytest-asyncio |
+| Containerization | Docker + Docker Compose |
+| CI | GitHub Actions |
+
+---
+
+## Scope and Design Decisions
+
+- **Simulated execution**: Recovery actions execute against `PaymentEnvironmentSimulator`. No real payment gateway is connected.
+- **Synthetic ML training data**: The model is trained on domain-knowledge-derived synthetic labels. It has not been validated on live payment data.
+- **Demo authentication**: API keys are hardcoded for evaluation. Production deployment requires a proper secrets manager and key rotation.
+- **Prototype grade**: Not PCI-DSS certified or RBI-compliant. This demonstrates the architecture, decision logic, and measurement methodology.
+
+---
+
+*Razorpay AI Buildathon 2026 · Track 03: AI Revenue Recovery*
